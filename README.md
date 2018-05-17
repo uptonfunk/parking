@@ -11,3 +11,16 @@ Flake8 is used for style enforcement / static analysis. Usage is simple,
 navigate to the project directory then:
 
    $ python3 -m flake8 .
+
+  
+## Running tests
+
+First, make sure you have a virtualenv and install it:
+
+	$ python3 -m venv venv
+	$ venv/bin/pip install -r requirements.txt
+	
+	
+Then run pytest
+
+	$ venv/bin/pytest .
