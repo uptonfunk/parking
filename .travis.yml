@@ -6,3 +6,5 @@ install:
 script:
   - flake8 .
   - pytest
+after_success:
+  - mypy .
