@@ -1,3 +1,6 @@
 pytest
 flake8
 attrs>=18.1.0
+mypy>=0.600
+wheel>=0.31.1
+tornado>=5.0.2
