@@ -15,13 +15,13 @@ class UserWSHandler(websocket.WebSocketHandler):
     def check_origin(self, origin) -> bool:
         return True
 
-    def initialize(self, sessions_handler: 'SessionsHandler') -> None:
-        self.sh = sessions_handler
+    def initialize(self, user_sessions: 'UserSessions') -> None:
+        self.usessions = user_sessions
 
     def open(self, user_id: str) -> None:
         self.user_id = user_id
         logger.info("WebSocket opened for user_id = '{}'".format(self.user_id))
-        self.sh.add_user(user_id, self)
+        self.usessions.add_user(user_id, self)
 
     def on_message(self, message: str) -> None:
         logger.debug("Received message from user_id = '{}' : '{}'".format(self.user_id, message))
@@ -29,20 +29,20 @@ class UserWSHandler(websocket.WebSocketHandler):
 
         if isinstance(msg, models.LocationUpdateMessage):
             logger.debug("Received location update from user_id = '{}'".format(self.user_id))
-            self.sh.update_user_location(self.user_id, msg.location)
+            self.usessions.update_user_location(self.user_id, msg.location)
         elif isinstance(msg, models.ParkingRequestMessage):
             logger.debug("Received parking request from user_id = '{}'".format(self.user_id))
         elif isinstance(msg, models.ParkingAcceptanceMessage):
             logger.debug("Received parking acceptance from user_id = '{}'".format(self.user_id))
         elif isinstance(msg, models.ParkingRejectionMessage):
             logger.debug("Received parking rejection from user_id = '{}'".format(self.user_id))
-            self.sh.add_user_rejection(self.user_id, msg.id)
+            self.usessions.add_user_rejection(self.user_id, msg.id)
         elif isinstance(msg, models.ParkingCancellationMessage):
             logger.info("Parking cancelled for user_id = '{}'".format(self.user_id))
             self.close()
 
     def on_close(self) -> None:
-        self.sh.remove_user(self.user_id)
+        self.usessions.remove_user(self.user_id)
         logger.info("WebSocket closed for user_id = {}".format(self.user_id))
 
 

@@ -1,10 +1,10 @@
 import tornado
 
-from parking.backend.user_server.wsserver import UserWSHandler, SessionsHandler
+from parking.backend.user_server.wsserver import UserWSHandler, UserSessions
 
 
 def main() -> None:
-    app = tornado.web.Application([(r"/ws/(.*)", UserWSHandler, {'sessions_handler': SessionsHandler()})])
+    app = tornado.web.Application([(r"/ws/(.*)", UserWSHandler, {'sessions_handler': UserSessions()})])
     app.listen(8888)
     tornado.ioloop.IOLoop.current().start()
 
