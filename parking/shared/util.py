@@ -1,4 +1,6 @@
+import json
 from typing import Union
+import attr
 
 
 def ensure(t):
@@ -15,6 +17,11 @@ def ensure(t):
         else:
             raise TypeError('Expected mapping or {}'.format(t))
     return check
+
+
+def serialize_model(model: object) -> str:
+    '''Handy function to dump an attr object to a JSON encoded string'''
+    return json.dumps(attr.asdict(model))
 
 
 def validate_pos(cls, attribute, value: Union[int, float]) -> None:
