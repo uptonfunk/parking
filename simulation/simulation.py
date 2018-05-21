@@ -4,6 +4,12 @@ import json
 import random
 import numpy as np
 import requests
+import sys
+import time
+import tkinter as tk
+import math
+
+from parking.shared.ws_models import *
 
 cars = []
 resturl = 'https://a6fbc847-6668-47c6-8169-2effb5444a13.mock.pstmn.io/spaces'
@@ -49,6 +55,13 @@ class Map:
         return count
 
 
+class Waypoint:
+    def __init__(self, time, lat, long):
+        self.time = time
+        self.lat = lat
+        self.long = long
+
+
 class Car:
     def __init__(self, lat, long):
         self.lat = lat
@@ -57,13 +70,36 @@ class Car:
         self.destY = 0
         self.aDestX = 0
         self.aDestY = 0
+        self.drawing = False
+        self.speed = 60
+        self.waypoints = []
+        self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
 
     def get_location(self):
         return self.lat, self.long
 
+    def distance_to(self, x, y):
+        return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
+
+    def get_position(self, now):
+        if len(self.waypoints) > 1:
+            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
+            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
+            timediff = self.waypoints[-1].time - self.waypoints[-2].time
+            progress = (now - self.waypoints[-1].time) / timediff
+            poslat = self.waypoints[-2].lat + (latdiff * progress)
+            poslong = self.waypoints[-2].long + (longdiff * progress)
+            return poslat, poslong
+        else:
+            return self.lat, self.long
+
     def set_initial_destination(self, x, y):
         self.destX = x
         self.destY = y
+        # for the moment, assuming no congestion and constant speed, we can calculate the arrival time
+        # however might need to pass it in when things get more complicated
+        newtime = time.time() + (self.distance_to(x, y) / self.speed)
+        self.waypoints.append(Waypoint(newtime, x, y))
 
     def get_initial_destination(self):
         return self.destX, self.destY
@@ -71,6 +107,8 @@ class Car:
     def set_allocated_destination(self, x, y):
         self.aDestX = x
         self.aDestY = y
+        newtime = time.time() + (self.distance_to(x, y) / self.speed)
+        self.waypoints.append(Waypoint(newtime, x, y))
 
     def get_allocated_destination(self):
         return self.aDestX, self.aDestY
@@ -142,10 +180,12 @@ class ParkingLot:
         self.price = new_price
         data = {"price": self.price}
         # TODO clean up repeated code
-        status = requests.post(resturl + "/:" + self.id, data=json.dumps(data))
+        status = requests.post(resturl + "/:" + str(self.id), data=json.dumps(data))
+
         if status.status_code != "200":
             pass
             # TODO server error handling
+        return True
 
     def delete(self):
         # TODO actual deletion
@@ -158,32 +198,37 @@ class ParkingLot:
 async def car_routine(startt, startx, starty):
     await asyncio.sleep(startt)
 
-    # TODO replace json with [de]serialization functions
+    car = Car(startx, starty)
+    cars.append(car)
 
     async with websockets.connect('ws://localhost:8765') as websocket:
-        # Create a car
-        car = Car(startx, starty)
-        cars.append(car)
+        car.drawing = True
 
         # Send the destination of the car to the server
         x, y = car.get_initial_destination()
-        await websocket.send(json.dumps({'location': {'latitude': x, 'longitude': y}, 'preferences': {}, '_type': 2},
-                                        indent=4,
-                                        separators=(',', ': ')))
+        # await websocket.send(json.dumps({'location': {'latitude': x, 'longitude': y}, 'preferences': {}, '_type': 2},
+        #                                indent=4,
+        #                                separators=(',', ': ')))
+        message = LocationUpdateMessage(Location(float(x), float(y)))
+        await websocket.send(json.dumps(attr.asdict(message)))
 
         # Recieve the parking allocation information
         space = await websocket.recv()
-        space = json.loads(space)
-        car.set_allocated_destination(space['location']['longitude'], space['location']['latitude'])
-        print(car.get_allocated_destination())
+        spacedict = json.loads(space)
+        lotdict = spacedict['lot']
+        locdict = lotdict['location']
+        # message = deserialize_ws_message(space)
+        car.set_allocated_destination(locdict['longitude'], locdict['latitude'])
 
         while True:
             # Send the location of the car at time intervals
             x, y = car.get_location()
             await asyncio.sleep(3)
-            await websocket.send(json.dumps({'location': {'latitude': x, 'longitude': y}, '_type': 1},
-                                            indent=4,
-                                            separators=(',', ': ')))
+            #await websocket.send(json.dumps({'location': {'latitude': x, 'longitude': y}, '_type': 1},
+            #                                indent=4,
+            #                                separators=(',', ': ')))
+            message = LocationUpdateMessage(Location(float(x), float(y)))
+            await websocket.send(json.dumps(attr.asdict(message)))
 
 
 async def space_routine(startt, lat, long, capacity, name, price, available):
@@ -191,11 +236,36 @@ async def space_routine(startt, lat, long, capacity, name, price, available):
     ParkingLot(lat, long, name, capacity, price=price, available=available)
 
 # mymap = Map((0, 1000), (0, 1000), 3000, 5, 50)
-car_tasks = [asyncio.ensure_future(car_routine(0, 2, 2)),
-             asyncio.ensure_future(car_routine(0, 4, 4)),
-             asyncio.ensure_future(car_routine(5, 6, 6))]
 # space_tasks = [asyncio.ensure_future(space_routine(0, 0, 0, 10, "space", 0, 10))]
+car_tasks = []
 space_tasks = []
+
+for i in range(1000):
+    car_tasks.append(asyncio.ensure_future(car_routine((i/10), random.randint(0, 600), random.randint(0, 400))))
+
 tasks = car_tasks + space_tasks
 
+
+@asyncio.coroutine
+def run_tk(root, interval):
+    w = tk.Canvas(root, width=600, height=400)
+    w.pack()
+    try:
+        while True:
+            w.delete("all")
+            now = time.time()
+            for car in cars:
+                if car.drawing:
+                    dotlat, dotlong = car.get_position(now)
+                    w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
+            root.update()
+            yield from asyncio.sleep(interval)
+    except tk.TclError as e:
+        if "application has been destroyed" not in e.args[0]:
+            raise
+
+
+framerate = 1/60
+root = tk.Tk()
+tasks.append(asyncio.ensure_future(run_tk(root, framerate)))
 asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))
