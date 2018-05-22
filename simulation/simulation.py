@@ -11,48 +11,108 @@ import math
 
 from parking.shared.ws_models import *
 
-cars = []
+#cars = []
 resturl = 'https://a6fbc847-6668-47c6-8169-2effb5444a13.mock.pstmn.io/spaces'
-
-
-class Map:
-    def __init__(self, lat_range: tuple, long_range: tuple,
-                 no_spaces: int, min_spaces: int, max_spaces: int):
-        self.lat_min = round(lat_range[0])
-        self.lat_max = round(lat_range[1])
-        self.long_min = round(long_range[0])
-        self.long_max = round(long_range[1])
-        self.x_range = self.lat_max - self.lat_min
-        self.y_range = self.long_max - self.long_min
-        self.grid = np.empty([self.y_range, self.x_range], dtype=object)
-        # Let's make some spaces!
+    
+class SimManager:
+    def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
+                 x, y, parking_lot_seed, car_seed, max_time):
+        random.seed(parking_lot_seed)
+        self.random_lot = random.getstate()
+        random.seed(car_seed)
+        self.random_car = random.getstate()
+        self.x = x
+        self.y = y
+        self.no_cars = no_cars
+        self.car_tasks = []
+        self.space_tasks = []
+        self.max_time = max_time
+        self.cars = []
+        self.lots = []
+        
         count = 0
-        random.seed()
+        name = 0
         while count < no_spaces:
-            for r in range(50):
-                x = random.randint(0, self.x_range-1)
-                y = random.randint(0, self.y_range-1)
-                if self.grid[y][x] is None:
-                    break
-                elif self.grid[y][x] is not None & r == 49:
-                    continue
+            
+            px = self.random_lot_randint(0, self.x-1)
+            py = self.random_lot_randint(0, self.y-1)
 
-            max_al = min(max_spaces, (no_spaces - count))
-            if max_al < min_spaces:
-                n = max_al
+            max_al = min(max_spaces_per_lot, (no_spaces - count))
+            if max_al < min_spaces_per_lot:
+                n = max_al # could potentially be smaller than min spaces per lot
             else:
-                n = random.randint(min_spaces, max_al)
-            self.grid[y][x] = ParkingLot(x, y, n, n, 0)
+                n = self.random_lot_randint(min_spaces_per_lot, max_al)
+            price = round(self.random_lot_uniform(0,10),2)
+            self.space_tasks.append(asyncio.ensure_future(space_routine(0,
+                                                                       px,
+                                                                       py,
+                                                                       n,
+                                                                       str(name),
+                                                                       price,
+                                                                       n,
+                                                                       self)))
             count += n
-
-    def get_parking_lots(self):
-        return self.grid[self.grid is not None].size
-
-    def get_total_capacity(self):
-        count = 0
-        for ele in self.grid[self.grid is not None]:
-            count += ele.get_capacity()
-        return count
+            name += 1
+        
+        for i in range(self.no_cars):
+            self.car_tasks.append(asyncio.ensure_future(car_routine(round(self.random_car_uniform(0,self.max_time),1),
+                                                                    self.random_car_randint(0, self.x-1),
+                                                                    self.random_car_randint(0, self.y-1),
+                                                                    self)))
+        
+        self.tasks = self.car_tasks + self.space_tasks
+        
+        framerate = 1/60
+        root = tk.Tk()
+        self.tasks.append(asyncio.ensure_future(self.run_tk(root, framerate)))
+        asyncio.get_event_loop().run_until_complete(asyncio.gather(*self.tasks))
+        
+    @asyncio.coroutine
+    def run_tk(self, root, interval):
+        w = tk.Canvas(root, width=self.x, height=self.y)
+        w.pack()
+        try:
+            while True:
+                w.delete("all")
+                now = time.time()
+                for lot in self.lots:
+                    lotlat, lotlong = lot.get_location()
+                    w.create_rectangle(lotlat, lotlong, lotlat + 20, lotlong + 20, width=0, fill="green")
+                
+                for car in self.cars:
+                    if car.drawing:
+                        dotlat, dotlong = car.get_position(now)
+                        w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
+                root.update()
+                yield from asyncio.sleep(interval)
+        except tk.TclError as e:
+            if "application has been destroyed" not in e.args[0]:
+                raise
+    
+    def random_car_randint(self, a: int, b: int) -> int:
+        random.setstate(self.random_car)
+        output = random.randint(a, b)
+        self.random_car = random.getstate()
+        return output
+    
+    def random_car_uniform(self, a: int, b: int) -> float:
+        random.setstate(self.random_car)
+        output = random.uniform(a, b)
+        self.random_car = random.getstate()
+        return output
+    
+    def random_lot_randint(self, a:int, b: int) -> int:
+        random.setstate(self.random_lot)
+        output = random.randint(a, b)
+        self.random_lot = random.getstate()
+        return output
+    
+    def random_lot_uniform(self, a: int, b: int) -> float:
+        random.setstate(self.random_lot)
+        output = random.uniform(a, b)
+        self.random_lot = random.getstate()
+        return output
+         
 
 
 class Waypoint:
@@ -117,6 +177,15 @@ class Car:
 class ParkingLot:
     def __init__(self, lat: float, long: float,
                  capacity: int, name: str, price: int, available: int = 0):
+        if (capacity < 1) | (available < 1):
+            raise ValueError("Parking capacity/availability must be positive")
+            
+        if (not(isinstance(capacity,int))) | (not(isinstance(available,int))):
+            raise TypeError("Capacity/availability must be an integer")
+            
+        if available > capacity:
+            raise ValueError("Capacity has to be greater than available spaces")
+            
         self.lat: float = lat
         self.long: float = long
         self.capacity: int = capacity
@@ -133,10 +202,11 @@ class ParkingLot:
         data["name"] = name
         data["price"] = price
         body["data"] = data
+        
+        self.data_to_send = json.dumps(body)
 
-        status = requests.post(resturl, data=json.dumps(data))
-        self.id = json.loads(status.text)["id"]
-        print(self.id)
+        self.status = requests.post(resturl, data=self.data_to_send)
+        self.id = json.loads(self.status.text)["id"]
 
     def get_location(self):
         return self.lat, self.long
@@ -159,12 +229,12 @@ class ParkingLot:
 
     def fill_space(self) -> bool:
             if self.available > 0:
-                self.available -= 1
-                data = {"available": self.available}
-                status = requests.post(resturl + "/:" + self.id, data=json.dumps(data))
+                data = {"available": (self.available - 1)}
+                status = requests.post(resturl + "/:" + str(self.id), data=json.dumps(data))
                 if status.status_code != "200":
                     pass
                     # TODO server error handling
+                self.available -= 1
                 return True
             else:
                 return False
@@ -193,13 +263,31 @@ class ParkingLot:
         if status.status_code != "200":
             pass
             # TODO server error handling
+    
+    def change_availability(self, value):
+        if value > self.capacity | value < 0:
+            raise ValueError("Availability must be positive and no greater than the capacity")
+        
+        if (not(isinstance(value, int))):
+            raise TypeError("Availability must be an integer")
+        
+        status = requests.post(resturl + "/:" + str(self.id) + "/available", data=json.dumps({"available": value}))
+        
+        
+        if status.status_code == "200":
+            self.available = value
+            return True
+        else:
+            #TODO specific error handling i.e 404 or 405 etc
+            return False
+        
 
 
-async def car_routine(startt, startx, starty):
+async def car_routine(startt, startx, starty, manager):
     await asyncio.sleep(startt)
 
     car = Car(startx, starty)
-    cars.append(car)
+    manager.cars.append(car)
 
     async with websockets.connect('ws://localhost:8765') as websocket:
         car.drawing = True
@@ -231,21 +319,22 @@ async def car_routine(startt, startx, starty):
             await websocket.send(json.dumps(attr.asdict(message)))
 
 
-async def space_routine(startt, lat, long, capacity, name, price, available):
+async def space_routine(startt, lat, long, capacity, name, price, available, manager):
     await asyncio.sleep(startt)
-    ParkingLot(lat, long, name, capacity, price=price, available=available)
+    manager.lots.append(ParkingLot(lat, long, capacity, name, price, available))
 
 # mymap = Map((0, 1000), (0, 1000), 3000, 5, 50)
 # space_tasks = [asyncio.ensure_future(space_routine(0, 0, 0, 10, "space", 0, 10))]
+    '''
 car_tasks = []
 space_tasks = []
 
 for i in range(1000):
     car_tasks.append(asyncio.ensure_future(car_routine((i/10), random.randint(0, 600), random.randint(0, 400))))
 
-tasks = car_tasks + space_tasks
+tasks = car_tasks + space_tasks'''
 
-
+'''
 @asyncio.coroutine
 def run_tk(root, interval):
     w = tk.Canvas(root, width=600, height=400)
@@ -263,9 +352,12 @@ def run_tk(root, interval):
     except tk.TclError as e:
         if "application has been destroyed" not in e.args[0]:
             raise
+            '''
 
-
+'''
 framerate = 1/60
 root = tk.Tk()
 tasks.append(asyncio.ensure_future(run_tk(root, framerate)))
-asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))
+asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))'''
+
+SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
