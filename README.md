@@ -1,4 +1,8 @@
 # parking
+
+[![Build Status](https://travis-ci.com/educationallylimited/parking.svg?branch=master)](https://travis-ci.com/educationallylimited/parking)
+[![Coverage Status](https://coveralls.io/repos/github/educationallylimited/parking/badge.svg?branch=master)](https://coveralls.io/github/educationallylimited/parking?branch=master)
+
 Parking monolith
 
 ## Installing requirements
