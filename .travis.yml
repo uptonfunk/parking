@@ -6,6 +6,9 @@ install:
 script:
   - flake8 .
   - coverage run --source=parking -m pytest
+  - pytest
+services:
+  - postgresql
 after_success:
   - mypy .
   - coveralls
