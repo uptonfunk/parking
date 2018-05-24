@@ -46,6 +46,11 @@ class DbAccess(object):
                                                p.location.longitude, p.price, p.capacity, 0)
         return park_id
 
+    async def get_parking_lot(self, park_id: int) -> Record:
+        async with self.pool.acquire() as conn:
+            parking_lot: Record = await conn.fetchrow(c.PARKINGLOTS_SELECT, park_id)
+        return parking_lot
+
     async def delete_parking_lot(self, park_id: int) -> Optional[int]:
         async with self.pool.acquire() as conn:
             park_id: int = await conn.fetchval(c.PARKINGLOTS_DELETE, park_id)
@@ -76,6 +81,11 @@ class DbAccess(object):
                 logger.warning("Tried to allocate user : '{}' when they already had an allocation.".format(user_id))
                 return False
         return True
+
+    async def get_parking_lot_allocations(self, park_id: int) -> List[Record]:
+        async with self.pool.acquire() as conn:
+            records: List[Record] = await conn.fetch(c.ALLOCATIONS_SELECT, park_id)
+        return records
 
     async def get_available_parking_lots(self, lat: float, long: float,
                                          dist_meters: int, exclusions: List[int]) -> List[Record]:

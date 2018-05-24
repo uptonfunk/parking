@@ -1,5 +1,6 @@
 from asyncio import AbstractEventLoop
 from typing import List
+from uuid import uuid4
 
 import pytest
 import testing.postgresql
@@ -168,3 +169,31 @@ async def test_get_available_parking_lots(event_loop):
         assert len(records2) == 1
         assert records2[0]['id'] == 1
         assert round(records2[0]['distance']) == 991
+
+
+@pytest.mark.asyncio
+async def test_add_allocation(event_loop):
+    with Postgresql() as postgresql:
+        db = await DbAccess.create(postgresql.url(), event_loop, reset_tables=True)
+        parking_lot = ParkingLot(100, 'test_name', 0.0, Location(0.0, 1.0089))
+        user_id = str(uuid4())
+
+        park_id = await db.insert_parking_lot(parking_lot)
+        result = await db.allocate_parking_lot(user_id, park_id)
+        assert result
+
+        allocations = await db.get_parking_lot_allocations(park_id)
+        assert allocations[0]['park_id'] == park_id
+        assert allocations[0]['user_id'] == user_id
+
+
+@pytest.mark.asyncio
+async def test_get_parking_lot(event_loop):
+    with Postgresql() as postgresql:
+        db = await DbAccess.create(postgresql.url(), event_loop, reset_tables=True)
+        parking_lot = ParkingLot(100, 'test_name', 0.0, Location(0.0, 1.0089))
+
+        park_id = await db.insert_parking_lot(parking_lot)
+
+        lot = await db.get_parking_lot(park_id)
+        assert lot['name'] == parking_lot.name
