@@ -305,7 +305,8 @@ async def car_routine(startt, startx, starty, manager):
 async def space_routine(startt, lat, long, capacity, name, price, available, manager):
     await asyncio.sleep(startt)
 
-    msgbody = restmodels.ParkingLot(capacity, name, price, restmodels.Location(lat, long))
+    msgbody = serialize_model(restmodels.ParkingLot(capacity, name, price,
+                                                    restmodels.Location(float(lat), float(long))))
 
     client = httpclient.AsyncHTTPClient()
     request = httpclient.HTTPRequest(resturl, body=msgbody, method='POST')
