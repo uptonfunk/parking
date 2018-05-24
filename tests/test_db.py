@@ -138,3 +138,33 @@ async def test_allocate_parking_lot_to_user_already_allocated_fail(event_loop):
 
         assert await db.allocate_parking_lot("test_user", 1) is True
         assert await db.allocate_parking_lot("test_user", 2) is False
+
+
+@pytest.mark.asyncio
+async def test_get_available_parking_lots(event_loop):
+    with Postgresql() as postgresql:
+        db = await DbAccess.create(postgresql.url(), event_loop, reset_tables=True)
+        parking_lot1 = ParkingLot(100, 'test_name1', 0.0, Location(0.0, 1.0089))
+        parking_lot2 = ParkingLot(100, 'test_name2', 0.0, Location(0.0, 1.01))
+        parking_lot3 = ParkingLot(100, 'test_name2', 0.0, Location(0.0, 1.0))
+
+        await db.insert_parking_lot(parking_lot1)
+        await db.update_parking_lot_availability(1, 50)
+        await db.insert_parking_lot(parking_lot2)
+        await db.update_parking_lot_availability(2, 50)
+        await db.insert_parking_lot(parking_lot3)
+        await db.update_parking_lot_availability(3, 50)
+
+        records = await db.get_available_parking_lots(lat=0, long=1, dist_meters=1000, exclusions=[])
+
+        assert len(records) == 2
+        assert records[0]['id'] == 3
+        assert records[0]['distance'] == 0
+        assert records[1]['id'] == 1
+        assert round(records[1]['distance']) == 991
+
+        records2 = await db.get_available_parking_lots(lat=0, long=1, dist_meters=1000, exclusions=[3])
+
+        assert len(records2) == 1
+        assert records2[0]['id'] == 1
+        assert round(records2[0]['distance']) == 991

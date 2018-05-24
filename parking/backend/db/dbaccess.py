@@ -1,8 +1,9 @@
 import logging
 from asyncio import AbstractEventLoop
-from typing import Optional
+from typing import Optional, List
 
 import asyncpg
+from asyncpg import Record
 
 import parking.backend.db.sql_constants as c
 from parking.shared.rest_models import ParkingLot
@@ -33,6 +34,7 @@ class DbAccess(object):
         logger.info("Creating database tables.")
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                await conn.execute(c.SETUP_EXTENSIONS)
                 await conn.execute(c.PARKINGLOTS_CREATE_TABLE)
                 await conn.execute(c.ALLOCATIONS_CREATE_TABLE)
         logger.info("Database tables created.")
@@ -74,3 +76,14 @@ class DbAccess(object):
                 logger.warning("Tried to allocate user : '{}' when they already had an allocation.".format(user_id))
                 return False
         return True
+
+    async def get_available_parking_lots(self, lat: float, long: float,
+                                         dist_meters: int, exclusions: List[int]) -> List[Record]:
+        async with self.pool.acquire() as conn:
+            if exclusions:
+                print(exclusions)
+                records = await conn.fetch(c.PARKINGLOTS_SELECT_WITHIN_DISTANCE_WITH_EXCLUSIONS,
+                                           lat, long, dist_meters, exclusions)
+            else:
+                records = await conn.fetch(c.PARKINGLOTS_SELECT_WITHIN_DISTANCE, lat, long, dist_meters)
+        return records
