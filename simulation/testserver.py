@@ -1,18 +1,20 @@
 import asyncio
 import websockets
-from parking.shared.ws_models import *
+import parking.shared.ws_models as wsmodels
+from parking.shared.util import serialize_model
 
 
 async def hello(websocket, path):
 
     # receive a request
-    request = await websocket.recv()
+    await websocket.recv()
     # request = json.loads(request)
     # message = deserialize_ws_message(request)
 
-    #send an allocation
-    message = ParkingAllocationMessage(ParkingLot(1, "x", 1.0, Location(200.0, 300.0)))
-    await websocket.send(json.dumps(attr.asdict(message)))
+    # send an allocation
+    message = serialize_model(wsmodels.ParkingAllocationMessage(
+        wsmodels.ParkingLot(1, "x", 1.0, wsmodels.Location(200.0, 300.0))))
+    await websocket.send(message)
 
     while True:
         await websocket.recv()

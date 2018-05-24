@@ -310,7 +310,7 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
 
     client = httpclient.AsyncHTTPClient()
     request = httpclient.HTTPRequest(resturl, body=msgbody, method='POST')
-    response = await client.fetch(request)
+    await client.fetch(request)
     # newid = json.loads(response.body)["id"]
     newid = 1
 
