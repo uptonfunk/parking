@@ -13,14 +13,11 @@ from parking.shared.util import serialize_model
 
 resturl = 'http://127.0.0.1:5000/spaces'
 
-
 class SimManager:
     def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
                  x, y, parking_lot_seed, car_seed, max_time):
-        random.seed(parking_lot_seed)
-        self.random_lot = random.getstate()
-        random.seed(car_seed)
-        self.random_car = random.getstate()
+        self.random_lot = random.Random(parking_lot_seed)
+        self.random_car = random.Random(car_seed)
         self.x = x
         self.y = y
         self.no_cars = no_cars
@@ -34,15 +31,15 @@ class SimManager:
         name = 0
         while count < no_spaces:
 
-            px = self.random_lot_randint(0, self.x-1)
-            py = self.random_lot_randint(0, self.y-1)
+            px = self.random_lot.randint(0, self.x-1)
+            py = self.random_lot.randint(0, self.y-1)
 
             max_al = min(max_spaces_per_lot, (no_spaces - count))
             if max_al < min_spaces_per_lot:
                 n = max_al  # could potentially be smaller than min spaces per lot
             else:
-                n = self.random_lot_randint(min_spaces_per_lot, max_al)
-            price = round(self.random_lot_uniform(0, 10), 2)
+                n = self.random_lot.randint(min_spaces_per_lot, max_al)
+            price = round(self.random_lot.uniform(0, 10), 2)
             self.space_tasks.append(asyncio.ensure_future(space_routine(0,
                                                                         px,
                                                                         py,
@@ -55,9 +52,9 @@ class SimManager:
             name += 1
 
         for i in range(self.no_cars):
-            self.car_tasks.append(asyncio.ensure_future(car_routine(round(self.random_car_uniform(0, self.max_time), 1),
-                                                                    self.random_car_randint(0, self.x-1),
-                                                                    self.random_car_randint(0, self.y-1),
+            self.car_tasks.append(asyncio.ensure_future(car_routine(round(self.random_car.uniform(0, self.max_time), 1),
+                                                                    self.random_car.randint(0, self.x-1),
+                                                                    self.random_car.randint(0, self.y-1),
                                                                     self)))
 
         self.tasks = self.car_tasks + self.space_tasks
@@ -89,30 +86,6 @@ class SimManager:
         except tk.TclError as e:
             if "application has been destroyed" not in e.args[0]:
                 raise
-
-    def random_car_randint(self, a: int, b: int) -> int:
-        random.setstate(self.random_car)
-        output = random.randint(a, b)
-        self.random_car = random.getstate()
-        return output
-
-    def random_car_uniform(self, a: int, b: int) -> float:
-        random.setstate(self.random_car)
-        output = random.uniform(a, b)
-        self.random_car = random.getstate()
-        return output
-
-    def random_lot_randint(self, a: int, b: int) -> int:
-        random.setstate(self.random_lot)
-        output = random.randint(a, b)
-        self.random_lot = random.getstate()
-        return output
-
-    def random_lot_uniform(self, a: int, b: int) -> float:
-        random.setstate(self.random_lot)
-        output = random.uniform(a, b)
-        self.random_lot = random.getstate()
-        return output
 
 
 class Waypoint:
