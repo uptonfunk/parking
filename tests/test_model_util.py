@@ -1,11 +1,11 @@
 import pytest
 from parking.shared.util import serialize_model
-from parking.shared.rest_models import SpaceAvailableMessage
+from parking.shared.rest_models import ParkingLotAvailableMessage
 
 
 def test_serialize_model():
     json_str = '{"available": 10}'
-    sam = SpaceAvailableMessage(10)
+    sam = ParkingLotAvailableMessage(10)
     assert serialize_model(sam) == json_str
 
 

@@ -2,7 +2,7 @@ import attr
 import pytest
 from parking.shared.location import Location
 from parking.shared.rest_models import (ParkingLot, ParkingLotCreationResponse,
-                                        SpaceAvailableMessage, SpacePriceMessage)
+                                        ParkingLotAvailableMessage, ParkingLotPriceMessage)
 
 loc = Location(0.0, 1.0)
 
@@ -41,15 +41,7 @@ def test_parkinglot_deser_ser():
 def test_parkinglot_creation_resp_id():
     pcr = ParkingLotCreationResponse(5)
     assert isinstance(pcr, ParkingLotCreationResponse)
-    assert not pcr.errors
     assert pcr.id == 5
-
-
-def test_parkinglot_creation_resp_error():
-    pcr = ParkingLotCreationResponse(errors=['test'])
-    assert isinstance(pcr, ParkingLotCreationResponse)
-    assert not pcr.id
-    assert pcr.errors == ['test']
 
 
 def test_parkinglot_creation_resp_neg_id():
@@ -59,9 +51,9 @@ def test_parkinglot_creation_resp_neg_id():
 
 def test_space_available_neg():
     with pytest.raises(ValueError):
-        SpaceAvailableMessage(-100)
+        ParkingLotAvailableMessage(-100)
 
 
 def test_price_available_neg():
     with pytest.raises(ValueError):
-        SpacePriceMessage(-100.0)
+        ParkingLotPriceMessage(-100.0)
