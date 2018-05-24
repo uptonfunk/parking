@@ -150,12 +150,9 @@ class Car:
 
 class ParkingLot:
     def __init__(self, lat: float, long: float,
-                 capacity: int, name: str, price: int, newid: int, client, available: int = 0):
-        if (capacity < 1) | (available < 1):
-            raise ValueError("Parking capacity/availability must be positive")
-
-        if (not(isinstance(capacity, int))) | (not(isinstance(available, int))):
-            raise TypeError("Capacity/availability must be an integer")
+                 capacity: int, name: str, price: float, newid: int, client, available: int = 0):
+        if (capacity < 1):
+            raise ValueError("Parking capacity must be positive")
 
         if available > capacity:
             raise ValueError("Capacity has to be greater than available spaces")
@@ -294,4 +291,5 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
 
     lot.change_price(1.0)
 
-SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
+if __name__ == '__main__':
+    SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
