@@ -188,6 +188,28 @@ async def test_add_allocation(event_loop):
 
 
 @pytest.mark.asyncio
+async def test_delete_allocation(event_loop):
+    with Postgresql() as postgresql:
+        db = await DbAccess.create(postgresql.url(), event_loop, reset_tables=True)
+        parking_lot = ParkingLot(100, 'test_name', 0.0, Location(0.0, 1.0089))
+        user_id = str(uuid4())
+
+        park_id = await db.insert_parking_lot(parking_lot)
+        result = await db.allocate_parking_lot(user_id, park_id)
+        assert result
+
+        allocations = await db.get_parking_lot_allocations(park_id)
+        assert len(allocations) == 1
+
+        await db.delete_allocation(user_id)
+        allocations = await db.get_parking_lot_allocations(park_id)
+        assert len(allocations) == 0
+
+        lot = await db.get_parking_lot(park_id)
+        assert lot['num_allocated'] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_parking_lot(event_loop):
     with Postgresql() as postgresql:
         db = await DbAccess.create(postgresql.url(), event_loop, reset_tables=True)

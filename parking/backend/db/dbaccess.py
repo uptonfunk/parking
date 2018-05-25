@@ -87,6 +87,13 @@ class DbAccess(object):
             records: List[Record] = await conn.fetch(c.ALLOCATIONS_SELECT, park_id)
         return records
 
+    async def delete_allocation(self, user_id: str) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                park_id: int = await conn.fetchval(c.ALLOCATIONS_DELETE, user_id)
+                if park_id:
+                    await conn.execute(c.PARKINGLOTS_DECREMENT_ALLOCATION, park_id)
+
     async def get_available_parking_lots(self, lat: float, long: float,
                                          dist_meters: int, exclusions: List[int]) -> List[Record]:
         async with self.pool.acquire() as conn:

@@ -43,6 +43,11 @@ SELECT * FROM Allocations
 WHERE park_id = $1
 """
 
+ALLOCATIONS_DELETE = """
+DELETE FROM Allocations where user_id=$1
+RETURNING park_id;
+"""
+
 PARKINGLOTS_INSERT = """
 INSERT INTO ParkingLots (name, capacity, lat, long, price, num_available, num_allocated)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -73,6 +78,12 @@ UPDATE ParkingLots
 SET num_allocated = num_allocated + 1
 WHERE id = $1
  AND num_allocated < num_available
+"""
+
+PARKINGLOTS_DECREMENT_ALLOCATION = """
+UPDATE ParkingLots
+SET num_allocated = num_allocated - 1
+WHERE id = $1
 """
 
 PARKINGLOTS_SELECT = """
