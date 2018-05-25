@@ -6,6 +6,7 @@ import asyncpg
 from asyncpg import Record
 
 import parking.backend.db.sql_constants as c
+from parking.shared.location import Location
 from parking.shared.rest_models import ParkingLot
 
 logger = logging.getLogger('backend')
@@ -94,8 +95,10 @@ class DbAccess(object):
                 if park_id:
                     await conn.execute(c.PARKINGLOTS_DECREMENT_ALLOCATION, park_id)
 
-    async def get_available_parking_lots(self, lat: float, long: float,
+    async def get_available_parking_lots(self, location: Location,
                                          dist_meters: int, exclusions: List[int]) -> List[Record]:
+        lat = location.latitude
+        long = location.longitude
         async with self.pool.acquire() as conn:
             if exclusions:
                 print(exclusions)

@@ -1,6 +1,8 @@
 import json
 from enum import IntEnum
+
 import attr
+
 from parking.shared.location import Location
 from parking.shared.util import ensure, validate_non_neg, enforce_type
 from parking.shared.rest_models import ParkingLot
@@ -14,6 +16,12 @@ class WebSocketMessageType(IntEnum):
     PARKING_REJECTION = 5
     PARKING_DEALLOC = 6
     PARKING_CANCEL = 7
+
+
+@attr.s
+class WsError:
+    err_type: int = attr.ib()
+    msg: str = attr.ib()
 
 
 def deserialize_ws_message(data: str):
@@ -47,9 +55,14 @@ class ParkingRequestMessage:
 @attr.s
 class ParkingAllocationMessage:
     # TODO: Maybe have an error class to validate the error.
-    lot: ParkingLot = attr.ib(converter=ensure(ParkingLot))
-    error: dict = attr.ib(validator=enforce_type, factory=dict)
+    lot: ParkingLot = attr.ib(converter=ensure(ParkingLot, allow_none=True), default=None)
+    error: WsError = attr.ib(default=None)
     _type: int = attr.ib(default=WebSocketMessageType.PARKING_ALLOCATION.value, init=False)
+
+    @error.validator
+    def validate_error(self, attribute, value):
+        if value and not isinstance(value, WsError):
+            raise TypeError()
 
 
 @attr.s
