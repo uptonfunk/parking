@@ -1,5 +1,4 @@
 import json
-from typing import Union
 import attr
 
 
@@ -24,11 +23,17 @@ def serialize_model(model: object) -> str:
     return json.dumps(attr.asdict(model))
 
 
-def validate_pos(cls, attribute, value: Union[int, float]) -> None:
+def validate_pos(cls, attribute, value: float) -> None:
     if value < 1:
         raise ValueError('{} must be positive'.format(attribute.name))
 
 
-def validate_non_neg(cls, attribute, value: Union[int, float]) -> None:
+def validate_non_neg(cls, attribute, value: float) -> None:
     if value < 0:
         raise ValueError('{} must be non-negative'.format(attribute.name))
+
+
+def enforce_type(cls, attribute, value) -> None:
+    if not isinstance(value, attribute.type):
+        raise TypeError('{} must be of type {}'
+                        .format(attribute.name, str(attribute.type)))
