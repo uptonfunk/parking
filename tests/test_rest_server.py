@@ -1,14 +1,14 @@
 from asyncio import AbstractEventLoop
-import json
 import pytest
 import tornado.web
 import testing.postgresql
 from parking.backend.sensor_server.rest_server import (IndividualLotDeleteHandler, IndividualLotAvailableHandler,
                                                        IndividualLotPriceHandler, ParkingLotsCreationHandler)
 from parking.backend.db.dbaccess import DbAccess
-from parking.shared.rest_models import ParkingLot, ParkingLotCreationResponse, ParkingLotPriceMessage
-from parking.shared.util import serialize_model
+from parking.shared.rest_models import ParkingLot
 from parking.shared.location import Location
+
+from parking.shared.clients import ParkingLotRest
 
 
 HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
@@ -38,43 +38,71 @@ def io_loop():
     return tornado.ioloop.IOLoop.current()
 
 
-@pytest.mark.gen_test(run_sync=False)
-async def test_create_parking_lot(http_client, base_url):
-    lot = ParkingLot(100, 'test', 1.0, Location(0.0, 1.0))
-    response = await http_client.fetch(base_url + '/spaces', method='POST', headers=HEADERS, body=serialize_model(lot))
-    assert ParkingLotCreationResponse(**json.loads(response.body)).id == 1
+@pytest.fixture
+def plr(base_url, http_client):
+    return ParkingLotRest(base_url, http_client)
 
 
 @pytest.mark.gen_test(run_sync=False)
-async def test_delete_parking_lot(http_client, base_url):
+async def test_create_parking_lot_new(plr):
     lot = ParkingLot(100, 'test', 1.0, Location(0.0, 1.0))
-    response = await http_client.fetch(base_url + '/spaces', method='POST', headers=HEADERS, body=serialize_model(lot))
-    assert ParkingLotCreationResponse(**json.loads(response.body)).id == 1
+    lot_id = await plr.create_lot(lot)
+    assert lot_id == 1
+
+
+@pytest.mark.gen_test(run_sync=False)
+async def test_delete_parking_lot(plr):
+    lot = ParkingLot(100, 'test', 1.0, Location(0.0, 1.0))
+    lot_id = await plr.create_lot(lot)
+    assert lot_id == 1
 
     # TODO: Check that the ParkingLot has actually been deleted using a GET # request.
-    response = await http_client.fetch(base_url + '/spaces/1', method='DELETE')
-    assert response.code == 200
+    await plr.delete_lot(lot_id)
 
 
 @pytest.mark.gen_test(run_sync=False)
 async def test_invalid_content_type(http_client, base_url):
-    response = await http_client.fetch(base_url + '/spaces', method='POST', body='not json', raise_error=False)
-    assert response.code == 400
+    with pytest.raises(tornado.httpclient.HTTPError) as http_error:
+        await http_client.fetch(base_url + '/spaces', method='POST', body='not json')
+    assert http_error.value.code == 400
 
 
 @pytest.mark.gen_test(run_sync=False)
-async def test_update_parking_lot_price(http_client, base_url):
+async def test_update_parking_lot_price(plr):
     lot = ParkingLot(100, 'test', 1.0, Location(0.0, 1.0))
-    response = await http_client.fetch(base_url + '/spaces', method='POST', headers=HEADERS, body=serialize_model(lot))
-    assert ParkingLotCreationResponse(**json.loads(response.body)).id == 1
+    lot_id = await plr.create_lot(lot)
+    assert lot_id == 1
 
     # TODO: Check that the ParkingLot price has actually been updated using a GET # request.
-    body = serialize_model(ParkingLotPriceMessage(2.0))
-    response = await http_client.fetch(base_url + '/spaces/1/price', method='POST', headers=HEADERS, body=body)
-    assert response.code == 200
+    await plr.update_price(lot_id, 2.0)
 
 
 @pytest.mark.gen_test(run_sync=False)
-async def test_delete_invalid_parking_lot_id(http_client, base_url):
-    response = await http_client.fetch(base_url + '/spaces/1234', method='DELETE', raise_error=False)
-    assert response.code == 404
+async def test_update_parking_lot_availability(plr):
+    lot = ParkingLot(100, 'test', 1.0, Location(0.0, 1.0))
+    lot_id = await plr.create_lot(lot)
+    assert lot_id == 1
+
+    # TODO: Check that the ParkingLot availability has actually been updated using a GET # request.
+    await plr.update_available(lot_id, 2)
+
+
+@pytest.mark.gen_test(run_sync=False)
+async def test_update_invalid_parking_lot_availability(plr):
+    with pytest.raises(tornado.httpclient.HTTPError) as http_error:
+        await plr.update_available(1234, 2)
+    assert http_error.value.code == 404
+
+
+@pytest.mark.gen_test(run_sync=False)
+async def test_update_invalid_parking_lot_price(plr):
+    with pytest.raises(tornado.httpclient.HTTPError) as http_error:
+        await plr.update_price(1234, 2.0)
+    assert http_error.value.code == 404
+
+
+@pytest.mark.gen_test(run_sync=False)
+async def test_delete_invalid_parking_lot_id(plr):
+    with pytest.raises(tornado.httpclient.HTTPError) as http_error:
+        await plr.delete_lot(1234)
+    assert http_error.value.code == 404
