@@ -2,6 +2,7 @@ from tornado import httpclient
 import parking.shared.rest_models as rest_models
 from parking.shared.util import serialize_model
 import json
+import websockets
 
 HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
 
@@ -35,3 +36,27 @@ class ParkingLotRest(object):
     async def delete_lot(self, lot_id: int):
         request = httpclient.HTTPRequest(f"{self.rest_url}/{lot_id}", method='DELETE')
         await self.client.fetch(request)
+
+
+class WSHelper(object):
+    def __init__(self, base_url):
+        self.url = base_url
+        self.connected = False
+        self.ws = websockets.connect(self.url)
+
+    async def send(self, message):
+        if not isinstance(message, str):
+            message = serialize_model(message)
+        await self.ws.send(message)
+
+    async def receive(self):
+        response = await self.ws.recv()
+        return response
+
+    async def __aenter__(self):
+        self._conn = websockets.connect(self.url)
+        self.ws = await self._conn.__aenter__()
+        return self
+
+    async def __aexit__(self, *args, **kwargs):
+        await self._conn.__aexit__(*args, **kwargs)
