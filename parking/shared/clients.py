@@ -3,6 +3,7 @@ import parking.shared.rest_models as rest_models
 from parking.shared.util import serialize_model
 import json
 import websockets
+from six import string_types
 
 HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
 
@@ -38,14 +39,14 @@ class ParkingLotRest(object):
         await self.client.fetch(request)
 
 
-class WSHelper(object):
+class CarWS(object):
     def __init__(self, base_url):
         self.url = base_url
         self.connected = False
         self.ws = websockets.connect(self.url)
 
     async def send(self, message):
-        if not isinstance(message, str):
+        if not isinstance(message, string_types):
             message = serialize_model(message)
         await self.ws.send(message)
 
