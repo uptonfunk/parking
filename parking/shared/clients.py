@@ -1,9 +1,14 @@
-from tornado import httpclient
-import parking.shared.rest_models as rest_models
-from parking.shared.util import serialize_model
+import asyncio
+import collections
 import json
-import websockets
 from six import string_types
+
+from tornado import httpclient, websocket
+from tornado.concurrent import future_set_result_unless_cancelled
+
+import parking.shared.rest_models as rest_models
+import parking.shared.ws_models as ws_models
+from parking.shared.util import serialize_model
 
 HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
 
@@ -39,25 +44,55 @@ class ParkingLotRest(object):
         await self.client.fetch(request)
 
 
-class CarWS(object):
-    def __init__(self, base_url):
-        self.url = base_url
-        self.connected = False
-        self.ws = websockets.connect(self.url)
+class CarWebsocket(object):
+    def __init__(self, ws, receive_callbacks=None):
+        self._ws = ws
+        self._ws._on_message_callback = self._on_message
 
-    async def send(self, message):
+        self._waiting = {}
+        self._message_queue = collections.defaultdict(collections.deque)
+        self._receive_callbacks = receive_callbacks if receive_callbacks else {}
+
+    @classmethod
+    async def create(cls, base_url, receive_callbacks=None):
+        return cls(await websocket.websocket_connect(base_url), receive_callbacks)
+
+    async def _send(self, message):
         if not isinstance(message, string_types):
             message = serialize_model(message)
-        await self.ws.send(message)
+        await self._ws.write_message(message)
 
-    async def receive(self):
-        response = await self.ws.recv()
-        return response
+    async def send_location(self, location: rest_models.Location):
+        await self._send(ws_models.LocationUpdateMessage(location))
 
-    async def __aenter__(self):
-        self._conn = websockets.connect(self.url)
-        self.ws = await self._conn.__aenter__()
-        return self
+    async def send_parking_request(self, location: rest_models.Location, preferences: dict):
+        await self._send(ws_models.ParkingRequestMessage(location, preferences))
 
-    async def __aexit__(self, *args, **kwargs):
-        await self._conn.__aexit__(*args, **kwargs)
+    async def send_parking_acceptance(self, lot_id: int):
+        await self._send(ws_models.ParkingAcceptanceMessage(lot_id))
+
+    async def send_parking_rejection(self, lot_id: int):
+        await self._send(ws_models.ParkingRejectionMessage(lot_id))
+
+    async def send_parking_cancellation(self, lot_id: int, reason: int):
+        await self._send(ws_models.ParkingCancellationMessage(lot_id, reason))
+
+    def _on_message(self, message: str):
+        message = ws_models.deserialize_ws_message(message)
+        message_type = message.__class__
+
+        if message_type in self._receive_callbacks:
+            self._receive_callbacks[message_type](message)
+        elif message_type in self._waiting:
+            future_set_result_unless_cancelled(self._waiting[message_type], message)
+            del self._waiting[message_type]
+        else:
+            self._message_queue[message_type].append(message)
+
+    def receive(self, message_type: type) -> asyncio.Future:
+        future = asyncio.Future()
+        if self._message_queue[message_type]:
+            future_set_result_unless_cancelled(future, self._message_queue[message_type].popleft())
+        else:
+            self._waiting[message_type] = future
+        return future
