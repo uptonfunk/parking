@@ -1,12 +1,16 @@
-import tornado.testing
+import asyncio
+
+import parking.shared.clients as clients
+from parking.shared.location import Location
+import parking.shared.ws_models as wsm
+
+import pytest
+
 import tornado.web
 import tornado.websocket
-from parking.shared.clients import CarWS as wscli
-from parking.shared.util import serialize_model
-import tornado.websocket
-import parking.shared.ws_models
 
-class SocketHandler(tornado.websocket.WebSocketHandler):
+
+class EchoServer(tornado.websocket.WebSocketHandler):
 
     def open(self):
         print(' [T] Websocket connection open')
@@ -19,29 +23,38 @@ class SocketHandler(tornado.websocket.WebSocketHandler):
         print(' [T] Websocket connection closed')
 
 
-class TestWebSockets(tornado.testing.AsyncHTTPTestCase):
+@pytest.fixture
+def app():
+    application = tornado.web.Application([(r'/', EchoServer)])
+    return application
 
-    def get_app(self):
-        return tornado.web.Application([(r'/', SocketHandler)])
 
-    @tornado.testing.gen_test
-    async def test_async_client(self):
+@pytest.fixture
+def io_loop():
+    return tornado.ioloop.IOLoop.current()
 
-        url = "ws://localhost:" + str(self.get_http_port()) + "/"
 
-        async with wscli(url) as cli:
-            await cli.send('message')
-            response = await cli.receive()
+@pytest.fixture
+def ws_url(base_url):
+    return base_url.replace('http', 'ws')
 
-        assert response == 'message'
 
-    @tornado.testing.gen_test
-    async def test_async_client(self):
-        url = "ws://localhost:" + str(self.get_http_port()) + "/"
-        lum = parking.shared.ws_models.LocationUpdateMessage(parking.shared.ws_models.Location(1.0, 1.0))
+@pytest.mark.gen_test(run_sync=False)
+async def test_location_message_future(http_client, ws_url):
+    car_ws = await clients.CarWebsocket.create(ws_url)
+    location = Location(0.0, 1.0)
+    await car_ws.send_location(location)
+    response = await car_ws.receive(wsm.LocationUpdateMessage)
+    assert response.location == location
 
-        async with wscli(url) as cli:
-            await cli.send(lum)
-            response = await cli.receive()
 
-        assert response == serialize_model(lum)
+@pytest.mark.gen_test(run_sync=False)
+async def test_location_message_callback(http_client, ws_url):
+    f = asyncio.Future()
+    car_ws = await clients.CarWebsocket.create(ws_url, {
+        wsm.LocationUpdateMessage: f.set_result,
+    })
+    location = Location(0.0, 1.0)
+    await car_ws.send_location(location)
+    response = await f
+    assert response.location == location
