@@ -8,7 +8,8 @@ from parking.backend.db.dbaccess import DbAccess
 from parking.backend.engine.alloc_engine import AllocationEngine
 from parking.backend.sensor_server.rest_server import (IndividualLotDeleteHandler, IndividualLotAvailableHandler,
                                                        IndividualLotPriceHandler, ParkingLotsCreationHandler)
-from parking.backend.user_server.wsserver import UserWSHandler, UserSessions
+from parking.backend.user_server.session import UserSessions
+from parking.backend.user_server.wsserver import UserWSHandler
 
 
 def main(temp_db: bool, db_url: str, reset_tables: bool):
