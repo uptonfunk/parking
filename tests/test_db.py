@@ -156,7 +156,7 @@ async def test_get_available_parking_lots(event_loop):
         await db.insert_parking_lot(parking_lot3)
         await db.update_parking_lot_availability(3, 50)
 
-        records = await db.get_available_parking_lots(lat=0, long=1, dist_meters=1000, exclusions=[])
+        records = await db.get_available_parking_lots(location=Location(0.0, 1.0), dist_meters=1000, exclusions=[])
 
         assert len(records) == 2
         assert records[0]['id'] == 3
@@ -164,7 +164,7 @@ async def test_get_available_parking_lots(event_loop):
         assert records[1]['id'] == 1
         assert round(records[1]['distance']) == 991
 
-        records2 = await db.get_available_parking_lots(lat=0, long=1, dist_meters=1000, exclusions=[3])
+        records2 = await db.get_available_parking_lots(location=Location(0.0, 1.0), dist_meters=1000, exclusions=[3])
 
         assert len(records2) == 1
         assert records2[0]['id'] == 1
