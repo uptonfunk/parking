@@ -36,7 +36,8 @@ class WebSocketErrorType(Enum):
 
 @attr.s
 class ParkingLotAllocation(ParkingLot):
-    distance: int = attr.ib(validator=enforce_type, default=0)
+    distance: float = attr.ib(validator=enforce_type, default=0.0)  # in meters
+    availability: int = attr.ib(validator=enforce_type)
 
 
 @attr.s
