@@ -7,7 +7,8 @@ from parking.shared.util import serialize_model
 async def hello(websocket, path):
 
     # receive a request
-    await websocket.recv()
+    m = await websocket.recv()
+    print(m)
     # request = json.loads(request)
     # message = deserialize_ws_message(request)
 

@@ -1,9 +1,12 @@
 from tornado import ioloop, web
+from parking.shared.rest_models import ParkingLotCreationResponse
+from parking.shared.util import serialize_model
 
 
 class MyHandler(web.RequestHandler):
     def post(self):
         print(self.request.body.rstrip())
+        self.write(serialize_model(ParkingLotCreationResponse(1)))
 
 
 app = web.Application([

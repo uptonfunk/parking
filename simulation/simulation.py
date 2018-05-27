@@ -1,17 +1,16 @@
 import asyncio
-import websockets
-import json
 import random
 import time
 import tkinter as tk
 import math
-from tornado import httpclient, gen
+from tornado import httpclient
 
 import parking.shared.ws_models as wsmodels
 import parking.shared.rest_models as restmodels
-from parking.shared.util import serialize_model
+from parking.shared.clients import CarWebsocket, ParkingLotRest
 
-resturl = 'http://127.0.0.1:5000/spaces'
+resturl = 'http://127.0.0.1:5000'
+
 
 class SimManager:
     def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
@@ -64,17 +63,15 @@ class SimManager:
         self.tasks.append(asyncio.ensure_future(self.run_tk(root, framerate)))
         asyncio.get_event_loop().run_until_complete(asyncio.gather(*self.tasks))
 
-    @asyncio.coroutine
-    def run_tk(self, root, interval):
+    async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.x, height=self.y)
         w.pack()
         try:
             while True:
                 w.delete("all")
                 now = time.time()
-                for lot in self.lots:
-                    # TODO no need to redraw these every time
-                    lotlat, lotlong = lot.get_location()
+                for simlot in self.lots:
+                    lotlat, lotlong = simlot.lot.location.latitude, simlot.lot.location.longitude
                     w.create_rectangle(lotlat, lotlong, lotlat + 20, lotlong + 20, width=0, fill="green")
 
                 for car in self.cars:
@@ -82,7 +79,7 @@ class SimManager:
                         dotlat, dotlong = car.get_position(now)
                         w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
                 root.update()
-                yield from asyncio.sleep(interval)
+                await asyncio.sleep(interval)
         except tk.TclError as e:
             if "application has been destroyed" not in e.args[0]:
                 raise
@@ -108,10 +105,6 @@ class Car:
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
 
-    def get_location(self):
-        # TODO update to use waypoints
-        return self.lat, self.long
-
     def distance_to(self, x, y):
         return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
 
@@ -135,66 +128,34 @@ class Car:
         newtime = time.time() + (self.distance_to(x, y) / self.speed)
         self.waypoints.append(Waypoint(newtime, x, y))
 
-    def get_initial_destination(self):
-        return self.destX, self.destY
-
     def set_allocated_destination(self, x, y):
         self.aDestX = x
         self.aDestY = y
         newtime = time.time() + (self.distance_to(x, y) / self.speed)
         self.waypoints.append(Waypoint(newtime, x, y))
 
-    def get_allocated_destination(self):
-        return self.aDestX, self.aDestY
-
 
 class ParkingLot:
-    def __init__(self, lat: float, long: float,
-                 capacity: int, name: str, price: float, newid: int, client, available: int = 0):
-        if (capacity < 1) | (available < 1):
+    def __init__(self, lot: restmodels.ParkingLot, client: ParkingLotRest, available: int = 0):
+
+        self.lot = lot
+
+        if (self.lot.capacity < 1) | (available < 1):
             raise ValueError("Parking capacity/availability must be positive")
 
-        if (not(isinstance(capacity, int))) | (not(isinstance(available, int))):
+        if (not(isinstance(self.lot.capacity, int))) | (not(isinstance(available, int))):
             raise TypeError("Capacity/availability must be an integer")
 
-        if available > capacity:
+        if available > self.lot.capacity:
             raise ValueError("Capacity has to be greater than available spaces")
 
-        self.lat: float = lat
-        self.long: float = long
-        self.capacity: int = capacity
         self.available: int = available
         self.cars = []
-        self.name = name
-        self.price = price
-        self.id = newid
         self.client = client
 
-    def get_location(self):
-        return self.lat, self.long
-
-    def get_capacity(self):
-        return self.capacity
-
-    def get_available(self):
-        return self.available
-
-    def allocate_space(self, car_id: int) -> bool:
-        # TODO should there be less available as soon as an allocation is made?
-        # TODO I think this should only be when a car parks
-        if (car_id not in self.cars) & self.available > 0:
-            self.cars.append(car_id)
-            self.available -= 1
-            return True
-        else:
-            return False
-
-    @gen.coroutine
-    def fill_space(self) -> bool:
+    async def fill_space(self) -> bool:
         if self.available > 0:
-            msgbody = serialize_model(restmodels.SpaceAvailableMessage(self.available - 1))
-            request = httpclient.HTTPRequest(resturl + "/:" + str(self.id) + "/available", body=msgbody, method='POST')
-            response = yield self.client.fetch(request)
+            response = await self.client.update_available(self.lot.id, self.available - 1)
             if response.error:
                 pass
             self.available -= 1
@@ -203,41 +164,31 @@ class ParkingLot:
             return False
 
     def free_space(self) -> bool:
-        if self.available < self.capacity:
+        if self.available < self.lot.capacity:
             self.available += 1
             return True
         else:
             return False
 
-    @gen.coroutine
-    def change_price(self, new_price):
-        self.price = new_price
-        msgbody = serialize_model(restmodels.SpacePriceMessage(new_price))
-        request = httpclient.HTTPRequest(resturl + "/:" + str(self.id) + "/price", body=msgbody, method='POST')
-        response = yield self.client.fetch(request)
-
-        if response.error:
-            pass
-        return True
-
-    @gen.coroutine
-    def delete(self):
-        request = httpclient.HTTPRequest(resturl + "/:" + str(self.id), method='DELETE')
-        response = yield self.client.fetch(request)
+    async def change_price(self, new_price):
+        self.lot.price = new_price
+        response = await self.client.update_price(self.lot.id, new_price)
         if response.error:
             pass
 
-    @gen.coroutine
-    def change_availability(self, value):
-        if value > self.capacity | value < 0:
+    async def delete(self):
+        response = await self.client.delete_lot(self.lot.id)
+        if response.error:
+            pass
+
+    async def change_availability(self, value):
+        if value > self.lot.capacity | value < 0:
             raise ValueError("Availability must be positive and no greater than the capacity")
 
         if not(isinstance(value, int)):
             raise TypeError("Availability must be an integer")
 
-        msgbody = serialize_model(restmodels.SpaceAvailableMessage(value))
-        request = httpclient.HTTPRequest(resturl + "/:" + str(self.id) + "/available", body=msgbody, method='POST')
-        response = yield self.client.fetch(request)
+        response = await self.client.update_available(self.lot.id, value)
 
         if response.error == "200":
             self.available = value
@@ -252,47 +203,42 @@ async def car_routine(startt, startx, starty, manager):
     car = Car(startx, starty)
     manager.cars.append(car)
 
-    async with websockets.connect('ws://localhost:8765') as websocket:
-        car.drawing = True
+    x, y = car.aDestX, car.aDestY
+    cli = await CarWebsocket.create(base_url="ws://localhost:8765")
+    await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+    car.drawing = True
 
-        # Request a parking space
-        x, y = car.get_initial_destination()
-        message = wsmodels.ParkingRequestMessage(wsmodels.Location(float(x), float(y)))
-        await websocket.send(serialize_model(message))
+    # Request a parking space
+    await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
 
-        # Recieve the parking allocation information
-        space = await websocket.recv()
-        spacedict = json.loads(space)
-        lotdict = spacedict['lot']
-        locdict = lotdict['location']
-        car.set_allocated_destination(locdict['longitude'], locdict['latitude'])
+    # Receive the parking allocation information
+    space = await cli.receive(wsmodels.ParkingAllocationMessage)
+    car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
-        while True:
-            # Send the location of the car at time intervals
-            await asyncio.sleep(3)
-            x, y = car.get_location()
-            message = wsmodels.LocationUpdateMessage(wsmodels.Location(float(x), float(y)))
-            await websocket.send(serialize_model(message))
+    while True:
+        # Send the location of the car at time intervals
+        await asyncio.sleep(3)
+        x, y = car.get_position(time.time())
+        await cli.send_location(wsmodels.Location(float(x), float(y)))
+        # TODO callbacks for preemptive messages
 
 
 async def space_routine(startt, lat, long, capacity, name, price, available, manager):
     await asyncio.sleep(startt)
 
-    msgbody = serialize_model(restmodels.ParkingLot(capacity, name, price,
-                                                    restmodels.Location(float(lat), float(long))))
+    cli = ParkingLotRest(resturl, httpclient.AsyncHTTPClient())
+    lot = restmodels.ParkingLot(capacity, name, price, restmodels.Location(float(lat), float(long)))
+    response = await cli.create_lot(lot)
+    lot.id = response
 
-    client = httpclient.AsyncHTTPClient()
-    request = httpclient.HTTPRequest(resturl, body=msgbody, method='POST')
-    await client.fetch(request)
-    # newid = json.loads(response.body)["id"]
-    newid = 1
-
-    lot = ParkingLot(lat, long, capacity, name, price, newid, client, available)
-    manager.lots.append(lot)
+    simlot = ParkingLot(lot, cli, capacity)
+    manager.lots.append(simlot)
 
     await asyncio.sleep(10)
 
-    lot.change_price(1.0)
+    simlot.change_price(1.0)
 
 if __name__ == '__main__':
-    SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
+    sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
+    # TODO add a way to stop simulation
+
