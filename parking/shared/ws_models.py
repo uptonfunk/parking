@@ -4,8 +4,8 @@ from enum import IntEnum, Enum
 import attr
 
 from parking.shared.location import Location
-from parking.shared.util import ensure, validate_non_neg, enforce_type
 from parking.shared.rest_models import ParkingLot
+from parking.shared.util import ensure, validate_non_neg, enforce_type
 
 
 class WebSocketMessageType(IntEnum):
@@ -32,6 +32,9 @@ class WebSocketErrorType(Enum):
     NOT_IMPLEMENTED = WsError(3, "The handling for this message has not been implemented yet.")
     CORRUPTED_SESSION = WsError(4, "Something went wrong with this session. Please create a new one.")
     ALLOCATION_COMMIT_FAIL = WsError(5, "Failed to commit parking allocation. Please request a new parking space.")
+    ANOTHER_CONNECTION_OPEN = WsError(6, "WebSocket connection already open for this user.")
+    DATABASE = WsError(7, "Unexpected exception with the database. Please try again.")
+    INTERNAL = WsError(8, "Unexpected internal error.")
 
 
 @attr.s
@@ -49,6 +52,7 @@ class ErrorMessage:
 @attr.s
 class ConfirmationMessage:
     _type: int = attr.ib(default=WebSocketMessageType.CONFIRMATION.value, init=False)
+    msg: str = attr.ib(default="Success.")
 
 
 @attr.s

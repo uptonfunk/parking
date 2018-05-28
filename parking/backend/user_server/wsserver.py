@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 
+from asyncpg import PostgresError
 from tornado import websocket, ioloop
 
 import parking.shared.ws_models as models
@@ -21,18 +22,33 @@ class UserWSHandler(websocket.WebSocketHandler):
         self.engine = engine
 
     def open(self, user_id: str) -> None:
+        logger.info("WebSocket opened for user_id = '{}'".format(user_id))
         self.user_id = user_id
-        logger.info("WebSocket opened for user_id = '{}'".format(self.user_id))
-        self.usessions.add_user(user_id, self)
+        if user_id in self.usessions.users:
+            logger.warning("Another session already opened for user_id = '{}'".format(self.user_id))
+            self.write_as_json(ErrorMessage(WebSocketErrorType.ANOTHER_CONNECTION_OPEN.value))
+            self.close()
+        else:
+            self.usessions.add_user(user_id, self)
 
     async def on_message(self, message: str) -> None:
+        try:
+            await self._on_message(message)
+        except PostgresError as e:
+            logger.error("Database exception for user_id : '{}', exception : '{}".format(self.user_id, e))
+            self.write_as_json(ErrorMessage(WebSocketErrorType.DATABASE.value))
+        except Exception as e:
+            logger.error("Unexpected exception for user_id : '{}', exception : '{}'".format(self.user_id, e))
+            self.write_as_json(ErrorMessage(WebSocketErrorType.INTERNAL.value))
+
+    async def _on_message(self, message: str) -> None:
         logger.debug("Received message from user_id = '{}' : '{}'".format(self.user_id, message))
 
         try:
             msg = models.deserialize_ws_message(message)
         except (ValueError, TypeError) as e:
             self.write_as_json(ErrorMessage(WebSocketErrorType.INVALID_MESSAGE.value))
-            logger.error(str(e))
+            logger.error("Invalid message received by user_id : '{}', exception : '{}'".format(self.user_id, e))
         else:
             if isinstance(msg, models.LocationUpdateMessage):
                 self.handle_location_update(msg)
@@ -53,9 +69,9 @@ class UserWSHandler(websocket.WebSocketHandler):
         try:
             self.usessions.update_user_location(self.user_id, message.location)
         except KeyError:
-            logger.error("user_id = '{}' not in the sessions dictionary.")
+            logger.error("user_id = '{}' not in the sessions dictionary.".format(self.user_id))
             self.write_as_json(ErrorMessage(WebSocketErrorType.CORRUPTED_SESSION.value))
-            self.close(code=400, reason=WebSocketErrorType.CORRUPTED_SESSION.value.msg)
+            self.close()
 
     async def handle_parking_request(self, message: models.ParkingRequestMessage) -> None:
         logger.debug("Received parking request from user_id = '{}'".format(self.user_id))
@@ -80,9 +96,9 @@ class UserWSHandler(websocket.WebSocketHandler):
         try:
             self.usessions.add_user_rejection(self.user_id, message.id)
         except KeyError:
-            logger.error("user_id = '{}' not in the sessions dictionary.")
+            logger.error("user_id = '{}' not in the sessions dictionary.".format(self.user_id))
             self.write_as_json(ErrorMessage(WebSocketErrorType.CORRUPTED_SESSION.value))
-            self.close(code=400, reason=WebSocketErrorType.CORRUPTED_SESSION.value.msg)
+            self.close()
         else:
             self.write_as_json(models.ConfirmationMessage())
 
@@ -90,14 +106,15 @@ class UserWSHandler(websocket.WebSocketHandler):
         logger.debug("Parking cancelled for user_id = '{}'. Reason = '{}'".format(self.user_id, message.reason))
         self.close()
 
-    def handle_deallocation(self):
+    def handle_deallocation(self) -> None:
         logger.debug("Deallocation requested for user_id = '{}'".format(self.user_id))
         self.write_as_json(models.ParkingDeallocationMessage())
 
     def on_close(self) -> None:
-        ioloop.IOLoop.current().spawn_callback(self.engine.delete_allocation, self.user_id)
-        self.usessions.remove_user(self.user_id)
-        logger.info("WebSocket closed for user_id = {}".format(self.user_id))
+        if self.user_id in self.usessions.users and self.usessions.get_user(self.user_id).session is self:
+            logger.info("Closing websocket for user_id = {}".format(self.user_id))
+            ioloop.IOLoop.current().spawn_callback(self.engine.delete_allocation, self.user_id)
+            self.usessions.remove_user(self.user_id)
 
     def write_as_json(self, model: object) -> None:
         self.write_message(serialize_model(model))
