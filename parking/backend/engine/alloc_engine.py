@@ -21,7 +21,8 @@ class AllocationEngine():
         # Just take the first lot for now...
         if lots:
             lot = lots[0]
-            return ParkingLot(lot['capacity'], lot['name'], lot['price'], Location(lot['lat'], lot['long']))
+            return ParkingLot(lot['capacity'], lot['name'], lot['price'],
+                              Location(lot['lat'], lot['long']), id=lot['id'])
         else:
             return None
 
@@ -45,14 +46,14 @@ class AllocationEngine():
         # Calculate the allocated users and find the furthest away
         lot = await self.dba.get_parking_lot(park_id)
         user_sessions = self.user_sessions
-        overflow = lot.num_allocated - lot.num_available
+        overflow = lot['num_allocated'] - lot['num_available']
 
         def sort_func(elem):
             user_loc = user_sessions.get_user(elem['user_id']).location
-            return distance((lot.location.lat, lot.location.long), (user_loc.lat, user_loc.long))
+            return distance((lot['lat'], lot['long']), (user_loc.latitude, user_loc.longitude))
 
         if overflow > 0:
             allocations = await self.dba.get_parking_lot_allocations(park_id)
             allocations.sort(key=sort_func, reverse=True)
             for alloc in allocations[:overflow]:
-                self.remove_allocation(alloc['user_id'])
+                await self.remove_allocation(alloc['user_id'])
