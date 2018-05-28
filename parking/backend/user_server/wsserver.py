@@ -32,7 +32,7 @@ class UserWSHandler(websocket.WebSocketHandler):
             msg = models.deserialize_ws_message(message)
         except (ValueError, TypeError) as e:
             self.write_as_json(ErrorMessage(WebSocketErrorType.INVALID_MESSAGE.value))
-            logger.error(e)
+            logger.error(str(e))
         else:
             if isinstance(msg, models.LocationUpdateMessage):
                 self.handle_location_update(msg)
