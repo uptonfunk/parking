@@ -22,7 +22,8 @@ def main(temp_db: bool, db_url: str, reset_tables: bool):
         app = tornado.web.Application([(r"/ws/(.*)", UserWSHandler, {'usessions': usessions, 'engine': engine}),
                                        (r'/spaces', ParkingLotsCreationHandler, {'dba': dba}),
                                        (r'/spaces/([0-9])+', IndividualLotDeleteHandler, {'dba': dba}),
-                                       (r'/spaces/([0-9])+/available', IndividualLotAvailableHandler, {'dba': dba}),
+                                       (r'/spaces/([0-9])+/available', IndividualLotAvailableHandler,
+                                       {'dba': dba, 'engine': engine}),
                                        (r'/spaces/([0-9])+/price', IndividualLotPriceHandler, {'dba': dba})])
 
         app.listen(8888)
