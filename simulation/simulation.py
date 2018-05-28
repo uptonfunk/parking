@@ -4,6 +4,7 @@ import time
 import tkinter as tk
 import math
 from tornado import httpclient
+from concurrent import futures
 
 import parking.shared.ws_models as wsmodels
 import parking.shared.rest_models as restmodels
@@ -205,22 +206,26 @@ async def car_routine(startt, startx, starty, manager):
 
     x, y = car.aDestX, car.aDestY
     cli = await CarWebsocket.create(base_url="ws://localhost:8765")
+    # request a parking space
     await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
     car.drawing = True
-
-    # Request a parking space
-    await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
 
     # Receive the parking allocation information
     space = await cli.receive(wsmodels.ParkingAllocationMessage)
     car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
+    await cli.send_parking_acceptance(space.lot.id)
+
+    # TODO await confirmation of acceptance
+
     while True:
-        # Send the location of the car at time intervals
-        await asyncio.sleep(3)
+        # Send the location of the car at time intervals, while listening for deallocation
+        try:
+            deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
+        except futures.TimeoutError:
+            deallocation = None
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
-        # TODO callbacks for preemptive messages
 
 
 async def space_routine(startt, lat, long, capacity, name, price, available, manager):
@@ -236,7 +241,7 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
 
     await asyncio.sleep(10)
 
-    simlot.change_price(1.0)
+    await simlot.change_price(1.0)
 
 if __name__ == '__main__':
     sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)

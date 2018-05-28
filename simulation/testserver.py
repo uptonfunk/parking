@@ -2,6 +2,7 @@ import asyncio
 import websockets
 import parking.shared.ws_models as wsmodels
 from parking.shared.util import serialize_model
+import random
 
 
 async def hello(websocket, path):
@@ -17,8 +18,14 @@ async def hello(websocket, path):
         wsmodels.ParkingLot(1, "x", 1.0, wsmodels.Location(200.0, 300.0))))
     await websocket.send(message)
 
+    deallocation = wsmodels.ParkingCancellationMessage(1)
+
     while True:
         await websocket.recv()
+        if random.randint(1,10) == 1:
+            await asyncio.sleep(1)
+            await websocket.send(serialize_model(deallocation))
+
 
 start_server = websockets.serve(hello, 'localhost', 8765)
 
