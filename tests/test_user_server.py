@@ -4,7 +4,7 @@ import tornado.web
 import tornado.websocket
 from tornado.websocket import WebSocketClientConnection
 
-from build.lib.parking.backend.user_server.wsserver import UserWSHandler
+from parking.backend.user_server.wsserver import UserWSHandler
 from parking.backend.db.dbaccess import DbAccess
 from parking.backend.engine.alloc_engine import AllocationEngine
 from parking.backend.user_server.session import UserSessions
