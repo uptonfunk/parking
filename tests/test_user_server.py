@@ -25,8 +25,7 @@ def app():
 
 
 @pytest.mark.gen_test(run_sync=False)
-async def test_invalid_message(http_port, app):
-    app.listen(http_port)
+async def test_invalid_message(http_port, http_server, app):
     user_id = "donald"
     ws_url = "ws://localhost:{}/ws/{}".format(http_port, user_id)
 
