@@ -174,13 +174,14 @@ class ParkingLot:
     async def change_price(self, new_price):
         self.lot.price = new_price
         response = await self.client.update_price(self.lot.id, new_price)
-        if response.error:
-            pass
+        # TODO error handling
+        # if response.error:
+        #     pass
 
     async def delete(self):
         response = await self.client.delete_lot(self.lot.id)
-        if response.error:
-            pass
+        # if response.error:
+        #     pass
 
     async def change_availability(self, value):
         if value > self.lot.capacity | value < 0:
@@ -191,11 +192,11 @@ class ParkingLot:
 
         response = await self.client.update_available(self.lot.id, value)
 
-        if response.error == "200":
-            self.available = value
-            return True
-        else:
-            return False
+        # if response.error == "200":
+        #     self.available = value
+        #     return True
+        # else:
+        #     return False
 
 
 async def car_routine(startt, startx, starty, manager):

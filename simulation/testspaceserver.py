@@ -11,7 +11,7 @@ class MyHandler(web.RequestHandler):
 
 app = web.Application([
     web.URLSpec('/spaces', MyHandler),
-    web.URLSpec('/spaces/:1/price', MyHandler)
+    web.URLSpec('/spaces/1/price', MyHandler)
 ])
 
 app.listen(port=5000)
