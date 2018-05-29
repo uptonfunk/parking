@@ -26,10 +26,13 @@ class SimManager:
         self.max_time = max_time
         self.cars = []
         self.lots = []
+        self.stop_flag = False
 
         count = 0
         name = 0
         while count < no_spaces:
+            if self.stop_flag:
+                break
 
             px = self.random_lot.randint(0, self.x-1)
             py = self.random_lot.randint(0, self.y-1)
@@ -40,29 +43,20 @@ class SimManager:
             else:
                 n = self.random_lot.randint(min_spaces_per_lot, max_al)
             price = round(self.random_lot.uniform(0, 10), 2)
-            self.space_tasks.append(asyncio.ensure_future(space_routine(0,
-                                                                        px,
-                                                                        py,
-                                                                        n,
-                                                                        str(name),
-                                                                        price,
-                                                                        n,
-                                                                        self)))
+            spacero = space_routine(0, px, py, n, str(name), price, n, self)
+            self.space_tasks.append(asyncio.ensure_future(spacero))
+
             count += n
             name += 1
 
         for i in range(self.no_cars):
-            self.car_tasks.append(asyncio.ensure_future(car_routine(round(self.random_car.uniform(0, self.max_time), 1),
-                                                                    self.random_car.randint(0, self.x-1),
-                                                                    self.random_car.randint(0, self.y-1),
-                                                                    self)))
+            start_time = round(self.random_car.uniform(0, self.max_time), 1)
+            start_x = self.random_car.randint(0, self.x - 1)
+            start_y = self.random_car.randint(0, self.y - 1)
+            coro = car_routine(start_time, start_x, start_y, self)
+            self.car_tasks.append(asyncio.ensure_future(coro))
 
         self.tasks = self.car_tasks + self.space_tasks
-
-        framerate = 1/60
-        root = tk.Tk()
-        self.tasks.append(asyncio.ensure_future(self.run_tk(root, framerate)))
-        asyncio.get_event_loop().run_until_complete(asyncio.gather(*self.tasks))
 
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.x, height=self.y)
@@ -81,9 +75,24 @@ class SimManager:
                         w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
                 root.update()
                 await asyncio.sleep(interval)
+                if self.stop_flag:
+                    break
+            root.destroy()
         except tk.TclError as e:
             if "application has been destroyed" not in e.args[0]:
                 raise
+
+    async def run(self):
+        framerate = 1 / 60
+        root = tk.Tk()
+        await self.run_tk(root, framerate)
+        #self.tasks.append(asyncio.ensure_future(self.run_tk(root, framerate)))
+        await asyncio.gather(*self.tasks)
+
+    async def stop(self, delay):
+        await asyncio.sleep(delay)
+        self.stop_flag = True
+        asyncio.get_event_loop().stop()
 
 
 class Waypoint:
@@ -221,6 +230,8 @@ async def car_routine(startt, startx, starty, manager):
 
     while True:
         # Send the location of the car at time intervals, while listening for deallocation
+        if manager.stop_flag:
+            break
         try:
             deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
         except futures.TimeoutError:
@@ -246,5 +257,9 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
 
 if __name__ == '__main__':
     sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
-    # TODO add a way to stop simulation
+    asyncio.ensure_future(sim.run())
+    #stop simulation after 10 seconds
+    asyncio.ensure_future(sim.stop(10))
+    asyncio.get_event_loop().run_forever()
+    #can access sim variables here for tests
 
