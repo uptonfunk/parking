@@ -2,11 +2,12 @@ import logging
 from typing import Optional
 from geopy.distance import distance
 from parking.backend.db.dbaccess import DbAccess
-from parking.shared.rest_models import ParkingLot
+from parking.shared.ws_models import ParkingLotAllocation
 from parking.shared.location import Location
 from parking.shared.ws_models import ParkingRequestMessage
 
 logger = logging.getLogger('backend')
+MAX_DISTANCE = 500
 
 
 class AllocationEngine():
@@ -14,15 +15,25 @@ class AllocationEngine():
         self.dba = dba
         self.user_sessions = user_sessions
 
-    async def handle_allocation_request(self, user_id: str, request: ParkingRequestMessage) -> Optional[ParkingLot]:
-        rejections = self.user_sessions.get_user(user_id).rejections
-        lots = await self.dba.get_available_parking_lots(request.location, 100, rejections)
+    async def handle_allocation_request(self, user_id: str,
+                                        request: ParkingRequestMessage) -> Optional[ParkingLotAllocation]:
+        user_rejections = self.user_sessions.get_user(user_id).rejections
+        if 'distance' in request.preferences:
+            max_distance = request.preferences['distance']
+        else:
+            max_distance = MAX_DISTANCE
+        lots = await self.dba.get_available_parking_lots(request.location, max_distance, user_rejections)
 
         # Just take the first lot for now...
         if lots:
             lot = lots[0]
-            return ParkingLot(lot['capacity'], lot['name'], lot['price'],
-                              Location(lot['lat'], lot['long']), id=lot['id'])
+            lot_loc = (lot['lat'], lot['long'])
+            req_loc = (request.location.latitude, request.location.longitude)
+            dist = distance(lot_loc, req_loc).meters
+
+            return ParkingLotAllocation(lot['capacity'], lot['name'], lot['price'],
+                                        Location(lot['lat'], lot['long']), lot['id'],
+                                        dist, lot['num_available'])
         else:
             return None
 
