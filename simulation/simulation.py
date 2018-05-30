@@ -6,6 +6,7 @@ import math
 from tornado import httpclient
 from concurrent import futures
 import logging
+from geopy.distance import vincenty
 
 from uuid import uuid4
 
@@ -32,14 +33,16 @@ class SimManager:
         self.stop_flag = False
         self.app_url = app_url
 
+        self.scale = 1000
+
         count = 0
         name = 0
         while count < no_spaces:
             if self.stop_flag:
                 break
 
-            px = self.random_lot.randint(0, self.x-1)
-            py = self.random_lot.randint(0, self.y-1)
+            px = self.random_lot.randint(0, self.x) / self.scale
+            py = self.random_lot.randint(0, self.y) / self.scale
 
             max_al = min(max_spaces_per_lot, (no_spaces - count))
             if max_al < min_spaces_per_lot:
@@ -54,16 +57,16 @@ class SimManager:
             name += 1
 
         for i in range(self.no_cars):
-            start_time = 5  # TODO atm, delay until after spaces created, later add handling for no spaces
-            start_x = self.random_car.randint(0, self.x - 1)
-            start_y = self.random_car.randint(0, self.y - 1)
+            start_time = 0  # TODO atm, delay until after spaces created, later add handling for no spaces
+            start_x = self.random_car.randint(0, self.x - 1) / self.scale
+            start_y = self.random_car.randint(0, self.y - 1) / self.scale
             coro = car_routine(start_time, start_x, start_y, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         self.tasks = self.space_tasks + self.car_tasks
         self.run_task = None
 
-    async def run_tk(self, root, interval):
+    async def run_tk(self, root, interval, scale):
         w = tk.Canvas(root, width=self.x, height=self.y)
         w.pack()
         try:
@@ -72,12 +75,16 @@ class SimManager:
                 now = time.time()
                 for simlot in self.lots:
                     lotlat, lotlong = simlot.lot.location.latitude, simlot.lot.location.longitude
-                    w.create_rectangle(lotlat, lotlong, lotlat + 20, lotlong + 20, width=0, fill="green")
+                    x = lotlat * scale
+                    y = lotlong * scale
+                    w.create_rectangle(x, y, x + 20, y + 20, width=0, fill="green")
 
                 for car in self.cars:
                     if car.drawing:
                         dotlat, dotlong = car.get_position(now)
-                        w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
+                        x = dotlat * scale
+                        y = dotlong * scale
+                        w.create_oval(x, y, x + 5, y + 5, width=0, fill='blue')
                 root.update()
                 await asyncio.sleep(interval)
             root.destroy()
@@ -89,7 +96,7 @@ class SimManager:
         logger.info("simulation running")
         framerate = 1 / 60
         root = tk.Tk()
-        self.run_task = self.run_tk(root, framerate)
+        self.run_task = self.run_tk(root, framerate, self.scale)
         await asyncio.gather(self.run_task, *self.tasks)
 
     async def stop(self, delay):
@@ -107,6 +114,18 @@ class Waypoint:
         self.long = long
 
 
+def distance(ax, ay, bx, by):
+    # PYTHAGORAS - use for cartesian coordinates
+    # return math.sqrt((ax - bx)**2 + (ay - by)**2)
+
+    a = (ax, ay)
+    b = (bx, by)
+    # VINCENTY - use for lat/long, accurate and slow
+    return vincenty(a, b).meters
+
+    # GREAT CIRCLE - use for lat/long, fast and inaccurate
+
+
 class Car:
     def __init__(self, lat, long):
         self.lat = lat
@@ -121,7 +140,7 @@ class Car:
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
 
     def distance_to(self, x, y):
-        return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
+        return distance(x, y, self.lat, self.long)
 
     def get_position(self, now):
         if len(self.waypoints) > 1:
@@ -278,7 +297,7 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
     await simlot.change_price(1.0)
 
 if __name__ == '__main__':
-    sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
+    sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100, "127.0.0.1")
     asyncio.ensure_future(sim.run())
     #stop simulation after 10 seconds
     asyncio.ensure_future(sim.stop(10))
