@@ -10,12 +10,9 @@ import parking.shared.ws_models as wsmodels
 import parking.shared.rest_models as restmodels
 from parking.shared.clients import CarWebsocket, ParkingLotRest
 
-resturl = 'http://127.0.0.1:5000'
-
-
 class SimManager:
     def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
-                 x, y, parking_lot_seed, car_seed, max_time):
+                 x, y, parking_lot_seed, car_seed, max_time, app_url):
         self.random_lot = random.Random(parking_lot_seed)
         self.random_car = random.Random(car_seed)
         self.x = x
@@ -27,6 +24,7 @@ class SimManager:
         self.cars = []
         self.lots = []
         self.stop_flag = False
+        self.app_url = app_url
 
         count = 0
         name = 0
@@ -57,12 +55,13 @@ class SimManager:
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         self.tasks = self.car_tasks + self.space_tasks
+        self.run_task = None
 
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.x, height=self.y)
         w.pack()
         try:
-            while True:
+            while not self.stop_flag:
                 w.delete("all")
                 now = time.time()
                 for simlot in self.lots:
@@ -75,8 +74,6 @@ class SimManager:
                         w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
                 root.update()
                 await asyncio.sleep(interval)
-                if self.stop_flag:
-                    break
             root.destroy()
         except tk.TclError as e:
             if "application has been destroyed" not in e.args[0]:
@@ -85,14 +82,15 @@ class SimManager:
     async def run(self):
         framerate = 1 / 60
         root = tk.Tk()
-        await self.run_tk(root, framerate)
-        #self.tasks.append(asyncio.ensure_future(self.run_tk(root, framerate)))
-        await asyncio.gather(*self.tasks)
+        self.run_task = self.run_tk(root, framerate)
+        await asyncio.gather(self.run_task, *self.tasks)
 
     async def stop(self, delay):
         await asyncio.sleep(delay)
         self.stop_flag = True
-        asyncio.get_event_loop().stop()
+        await self.run_task
+        for t in car_tasks + space_tasks:
+            await t
 
 
 class Waypoint:
@@ -215,23 +213,21 @@ async def car_routine(startt, startx, starty, manager):
     manager.cars.append(car)
 
     x, y = car.aDestX, car.aDestY
-    cli = await CarWebsocket.create(base_url="ws://localhost:8765")
+    cli = await CarWebsocket.create(base_url=manager.app_url.replace('http', 'ws') + "/ws/")
     # request a parking space
     await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
     car.drawing = True
 
-    # Receive the parking allocation information
     space = await cli.receive(wsmodels.ParkingAllocationMessage)
     car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
     await cli.send_parking_acceptance(space.lot.id)
 
     # TODO await confirmation of acceptance
+    await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
 
-    while True:
+    while not manager.stop_flag:
         # Send the location of the car at time intervals, while listening for deallocation
-        if manager.stop_flag:
-            break
         try:
             deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
         except futures.TimeoutError:
@@ -243,7 +239,7 @@ async def car_routine(startt, startx, starty, manager):
 async def space_routine(startt, lat, long, capacity, name, price, available, manager):
     await asyncio.sleep(startt)
 
-    cli = ParkingLotRest(resturl, httpclient.AsyncHTTPClient())
+    cli = ParkingLotRest(manager.app_url, httpclient.AsyncHTTPClient())
     lot = restmodels.ParkingLot(capacity, name, price, restmodels.Location(float(lat), float(long)))
     response = await cli.create_lot(lot)
     lot.id = response
