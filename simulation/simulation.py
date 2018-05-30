@@ -54,7 +54,7 @@ class SimManager:
             name += 1
 
         for i in range(self.no_cars):
-            start_time = round(self.random_car.uniform(0, self.max_time), 1)
+            start_time = 5  # TODO atm, delay until after spaces created, later add handling for no spaces
             start_x = self.random_car.randint(0, self.x - 1)
             start_y = self.random_car.randint(0, self.y - 1)
             coro = car_routine(start_time, start_x, start_y, self)
@@ -227,7 +227,7 @@ async def car_routine(startt, startx, starty, manager):
     # request a parking space
 
     waiting = True
-    while waiting:
+    while waiting and not manager.stop_flag:
         response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
         logger.info("allocation requested...")
         car.drawing = True
@@ -238,15 +238,19 @@ async def car_routine(startt, startx, starty, manager):
         space = fut.result()
         logger.debug('got result: {}'.format(space))
         if isinstance(space, wsmodels.ErrorMessage):
+            logger.info("retrying initial request...")
             await asyncio.sleep(1)
-            
-    logger.info("allocation recieved: '{}'".format(space._type))
-    car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
-    await cli.send_parking_acceptance(space.lot.id)
+    if not manager.stop_flag:
 
-    # TODO await confirmation of acceptance
-    await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
+        logger.info("allocation recieved: '{}'".format(space.lot.id))
+        car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
+
+        await cli.send_parking_acceptance(space.lot.id)
+
+    if not manager.stop_flag:
+
+        await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
 
     while not manager.stop_flag:
         # Send the location of the car at time intervals, while listening for deallocation
