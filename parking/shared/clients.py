@@ -57,8 +57,8 @@ class CarWebsocket(object):
         self._receive_callbacks = receive_callbacks if receive_callbacks else {}
 
     @classmethod
-    async def create(cls, base_url, receive_callbacks=None):
-        return cls(await websocket.websocket_connect(base_url), receive_callbacks)
+    async def create(cls, base_url, user_id='', receive_callbacks=None):
+        return cls(await websocket.websocket_connect(base_url + "/" + user_id), receive_callbacks)
 
     async def _send(self, message):
         if not isinstance(message, string_types):

@@ -7,6 +7,8 @@ from tornado import httpclient
 from concurrent import futures
 import logging
 
+from uuid import uuid4
+
 import parking.shared.ws_models as wsmodels
 import parking.shared.rest_models as restmodels
 from parking.shared.clients import CarWebsocket, ParkingLotRest
@@ -58,7 +60,7 @@ class SimManager:
             coro = car_routine(start_time, start_x, start_y, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
-        self.tasks = self.car_tasks + self.space_tasks
+        self.tasks = self.space_tasks + self.car_tasks
         self.run_task = None
 
     async def run_tk(self, root, interval):
@@ -219,14 +221,25 @@ async def car_routine(startt, startx, starty, manager):
 
     x, y = car.aDestX, car.aDestY
     logger.info("car routine started")
-    cli = await CarWebsocket.create(base_url=manager.app_url.replace('http', 'ws') + "/ws/")
+    car_id = str(uuid4())
+    cli = await CarWebsocket.create(base_url=manager.app_url.replace('http', 'ws') + "/ws", user_id=car_id)
     logger.info("car websocket client connected")
     # request a parking space
-    response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
-    logger.info("allocation requested...")
-    car.drawing = True
 
-    space = await cli.receive(wsmodels.ParkingAllocationMessage)
+    waiting = True
+    while waiting:
+        response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+        logger.info("allocation requested...")
+        car.drawing = True
+
+        futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
+        (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
+        logger.debug('got future: {}'.format(fut))
+        space = fut.result()
+        logger.debug('got result: {}'.format(space))
+        if isinstance(space, wsmodels.ErrorMessage):
+            await asyncio.sleep(1)
+            
     logger.info("allocation recieved: '{}'".format(space._type))
     car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 

@@ -22,7 +22,7 @@ async def test_create_parking_lot(http_client, base_url):
 """
 
 
-@pytest.mark.gen_test(run_sync=False)
+@pytest.mark.gen_test(run_sync=False, timeout=1000)
 async def test_integrate_sim(http_client, base_url):
     sim = SimManager(200, 20, 20, 50, 1000, 1000, 2, 4, 100, base_url)
     asyncio.ensure_future(sim.stop(30))
