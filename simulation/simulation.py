@@ -5,10 +5,14 @@ import tkinter as tk
 import math
 from tornado import httpclient
 from concurrent import futures
+import logging
 
 import parking.shared.ws_models as wsmodels
 import parking.shared.rest_models as restmodels
 from parking.shared.clients import CarWebsocket, ParkingLotRest
+
+logger = logging.getLogger('simulation')
+
 
 class SimManager:
     def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
@@ -80,6 +84,7 @@ class SimManager:
                 raise
 
     async def run(self):
+        logger.info("simulation running")
         framerate = 1 / 60
         root = tk.Tk()
         self.run_task = self.run_tk(root, framerate)
@@ -89,7 +94,7 @@ class SimManager:
         await asyncio.sleep(delay)
         self.stop_flag = True
         await self.run_task
-        for t in car_tasks + space_tasks:
+        for t in self.car_tasks + self.space_tasks:
             await t
 
 
@@ -213,12 +218,16 @@ async def car_routine(startt, startx, starty, manager):
     manager.cars.append(car)
 
     x, y = car.aDestX, car.aDestY
+    logger.info("car routine started")
     cli = await CarWebsocket.create(base_url=manager.app_url.replace('http', 'ws') + "/ws/")
+    logger.info("car websocket client connected")
     # request a parking space
-    await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+    response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+    logger.info("allocation requested...")
     car.drawing = True
 
     space = await cli.receive(wsmodels.ParkingAllocationMessage)
+    logger.info("allocation recieved: '{}'".format(space._type))
     car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
     await cli.send_parking_acceptance(space.lot.id)
