@@ -13,3 +13,4 @@ pytest-asyncio>=0.8.0
 pytest-tornado
 geopy
 pytest-mock
+websockets
