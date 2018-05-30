@@ -19,10 +19,10 @@ def make_app(url: str, _init_tables: bool = False, _reset_tables: bool = False):
     engine: AllocationEngine = AllocationEngine(dba, usessions)
     app = tornado.web.Application([(r"/ws/(.*)", UserWSHandler, {'usessions': usessions, 'engine': engine}),
                                    (r'/spaces', ParkingLotsCreationHandler, {'dba': dba}),
-                                   (r'/spaces/([0-9])+', IndividualLotDeleteHandler, {'dba': dba}),
-                                   (r'/spaces/([0-9])+/available', IndividualLotAvailableHandler,
+                                   (r'/spaces/([0-9]+)', IndividualLotDeleteHandler, {'dba': dba}),
+                                   (r'/spaces/([0-9]+)/available', IndividualLotAvailableHandler,
                                    {'dba': dba, 'engine': engine}),
-                                   (r'/spaces/([0-9])+/price', IndividualLotPriceHandler, {'dba': dba})])
+                                   (r'/spaces/([0-9]+)/price', IndividualLotPriceHandler, {'dba': dba})])
     return app
     
 
