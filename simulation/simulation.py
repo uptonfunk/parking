@@ -57,9 +57,9 @@ class SimManager:
             name += 1
 
         for i in range(self.no_cars):
-            start_time = 0  # TODO atm, delay until after spaces created, later add handling for no spaces
-            start_x = self.random_car.randint(0, self.x - 1) / self.scale
-            start_y = self.random_car.randint(0, self.y - 1) / self.scale
+            start_time = 5  # TODO atm, delay until after spaces created, later add handling for no spaces
+            start_x = self.random_car.randint(0, self.x - 1)
+            start_y = self.random_car.randint(0, self.y - 1)
             coro = car_routine(start_time, start_x, start_y, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
@@ -245,20 +245,22 @@ async def car_routine(startt, startx, starty, manager):
     logger.info("car websocket client connected")
     # request a parking space
 
+    logger.info(f'requesting allocation for car {car_id}')
     waiting = True
     while waiting and not manager.stop_flag:
         response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
-        logger.info("allocation requested...")
         car.drawing = True
 
         futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
         (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
-        logger.debug('got future: {}'.format(fut))
         space = fut.result()
         logger.debug('got result: {}'.format(space))
-        if isinstance(space, wsmodels.ErrorMessage):
-            logger.info("retrying initial request...")
-            await asyncio.sleep(1)
+        if not isinstance(space, wsmodels.ErrorMessage):
+            break
+        await asyncio.sleep(1)
+
+    logger.info(f"allocation recieved: for car {car_id}: '{space._type}'")
+    car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
     if not manager.stop_flag:
 
@@ -286,18 +288,22 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
 
     cli = ParkingLotRest(manager.app_url, httpclient.AsyncHTTPClient())
     lot = restmodels.ParkingLot(capacity, name, price, restmodels.Location(float(lat), float(long)))
+    logger.debug("creating lot...")
     response = await cli.create_lot(lot)
     lot.id = response
+    logger.info("created lot {}".format(response))
 
     simlot = ParkingLot(lot, cli, capacity)
     manager.lots.append(simlot)
 
     await asyncio.sleep(10)
 
+    logger.debug(f'changing price for lot {lot.id}')
     await simlot.change_price(1.0)
+    logger.info(f'Changed price for lot {lot.id} to {1.0}')
 
 if __name__ == '__main__':
-    sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100, "127.0.0.1")
+    sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
     asyncio.ensure_future(sim.run())
     #stop simulation after 10 seconds
     asyncio.ensure_future(sim.stop(10))
