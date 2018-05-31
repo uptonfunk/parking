@@ -4,7 +4,6 @@ from tornado import httpclient
 from simulation.simulation import ParkingLot
 import json
 
-# TODO add async http client
 
 @pytest.fixture
 def client():
