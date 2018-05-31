@@ -58,8 +58,8 @@ class SimManager:
 
         for i in range(self.no_cars):
             start_time = 5  # TODO atm, delay until after spaces created, later add handling for no spaces
-            start_x = self.random_car.randint(0, self.x - 1)
-            start_y = self.random_car.randint(0, self.y - 1)
+            start_x = self.random_car.randint(0, self.x - 1) / self.scale
+            start_y = self.random_car.randint(0, self.y - 1) / self.scale
             coro = car_routine(start_time, start_x, start_y, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
