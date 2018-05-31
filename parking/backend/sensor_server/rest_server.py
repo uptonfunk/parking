@@ -1,5 +1,6 @@
 import json
 from tornado import web
+from parking.backend.engine.alloc_engine import AllocationEngine
 from parking.shared.rest_models import (ParkingLot, ParkingLotCreationResponse, ParkingLotAvailableMessage,
                                         ParkingLotPriceMessage)
 from parking.shared.util import serialize_model
@@ -54,11 +55,17 @@ class IndividualLotPriceHandler(ParkingLotHandlerBase):
 
 
 class IndividualLotAvailableHandler(ParkingLotHandlerBase):
+
+    def initialize(self, dba: DbAccess, engine: AllocationEngine) -> None:
+        self.dba = dba
+        self.engine = engine
+
     async def post(self, lot_id: str):
         msg = self.load_from_json_data(ParkingLotAvailableMessage, self.json_args, 'Invalid availability data')
         park_id = await self.dba.update_parking_lot_availability(int(lot_id), msg.available)
         if not park_id:
             raise web.HTTPError(404, 'Unknown lot ID')
+        await self.engine.recalculate_allocations(int(lot_id))
 
 
 class IndividualLotDeleteHandler(web.RequestHandler):

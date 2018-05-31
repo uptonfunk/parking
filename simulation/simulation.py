@@ -5,20 +5,26 @@ import tkinter as tk
 import math
 from tornado import httpclient
 from concurrent import futures
+import logging
+from geopy.distance import vincenty
+
+from uuid import uuid4
+
 import parking.shared.ws_models as wsmodels
 import parking.shared.rest_models as restmodels
 from parking.shared.clients import CarWebsocket, ParkingLotRest
 
-resturl = 'http://127.0.0.1:5000'
+logger = logging.getLogger('simulation')
+
+SCALE = 110 * 1000  # the lat/long scaling factor
 
 
 class SimManager:
     def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
-                 no_rogues, x, y, parking_lot_seed, car_seed, max_time):
+                 width, height, parking_lot_seed, car_seed, max_time, app_url):
         self.random_lot = random.Random(parking_lot_seed)
         self.random_car = random.Random(car_seed)
-        self.x = x
-        self.y = y
+        self.width, self.height = width, height
         self.no_cars = no_cars
         self.no_rogues = no_rogues
         self.car_tasks = []
@@ -29,15 +35,16 @@ class SimManager:
         self.rogues = []
         self.lots = []
         self.stop_flag = False
+        self.app_url = app_url
 
         count = 0
         name = 0
+
         while count < no_spaces:
             if self.stop_flag:
                 break
 
-            px = self.random_lot.randint(0, self.x-1)
-            py = self.random_lot.randint(0, self.y-1)
+            p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
 
             max_al = min(max_spaces_per_lot, (no_spaces - count))
             if max_al < min_spaces_per_lot:
@@ -45,67 +52,78 @@ class SimManager:
             else:
                 n = self.random_lot.randint(min_spaces_per_lot, max_al)
             price = round(self.random_lot.uniform(0, 10), 2)
-            spacero = space_routine(0, px, py, n, str(name), price, n, self)
+            spacero = space_routine(0, p, n, str(name), price, n, self)
             self.space_tasks.append(asyncio.ensure_future(spacero))
 
             count += n
             name += 1
 
         for i in range(self.no_cars):
-            start_time = round(self.random_car.uniform(0, self.max_time), 1)
-            start_x = self.random_car.randint(0, self.x - 1)
-            start_y = self.random_car.randint(0, self.y - 1)
-            coro = car_routine(start_time, start_x, start_y, self)
+            start_time = 5  # TODO atm, delay until after spaces created, later add handling for no spaces
+            p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
+            coro = car_routine(start_time, p, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         rogue_start = 1
         for i in range(self.no_rogues):
             self.rogue_tasks.append(rogue_routine(x, y, self, rogue_start + i/10))
 
-        self.tasks = self.car_tasks + self.space_tasks + self.rogue_tasks
+        self.tasks = self.space_tasks + self.car_tasks
+        self.run_task = None
+
+    def point_to_location(self, x: float, y: float) -> wsmodels.Location:
+        """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
+        """
+        return wsmodels.Location(x / SCALE, y / SCALE)
+
+    def loc_to_point(self, loc: wsmodels.Location):
+        """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
+        """
+        return (loc.longitude * SCALE, loc.latitude * SCALE)
 
     async def run_tk(self, root, interval):
-        w = tk.Canvas(root, width=self.x, height=self.y)
+        w = tk.Canvas(root, width=self.width, height=self.height)
         w.pack()
         try:
-            while True:
+            while not self.stop_flag:
                 w.delete("all")
                 now = time.time()
                 for simlot in self.lots:
-                    lotlat, lotlong = simlot.lot.location.latitude, simlot.lot.location.longitude
-                    w.create_rectangle(lotlat, lotlong, lotlat + 20, lotlong + 20, width=0, fill="green")
+                    x, y = self.loc_to_point(simlot.lot.location)
+                    w.create_rectangle(x, y, x + 20, y + 20, width=0, fill="green")
 
                 for car in self.cars:
                     if car.drawing:
-                        dotlat, dotlong = car.get_position(now)
-                        w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
+                        x, y = self.loc_to_point(wsmodels.Location(*car.get_position(now)))
+                        w.create_oval(x, y, x + 5, y + 5, width=0, fill='blue')
 
                 for rogue in self.rogues:
                     if rogue.drawing:
                         if now > rogue.starttime:
+                            # TODO update to use latlong
                             dotlat, dotlong = rogue.get_position(now)
                             w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='black')
 
                 root.update()
                 await asyncio.sleep(interval)
-                if self.stop_flag:
-                    break
             root.destroy()
         except tk.TclError as e:
             if "application has been destroyed" not in e.args[0]:
                 raise
 
     async def run(self):
+        logger.info("simulation running")
         framerate = 1 / 60
         root = tk.Tk()
-        await self.run_tk(root, framerate)
-        #self.tasks.append(asyncio.ensure_future(self.run_tk(root, framerate)))
-        await asyncio.gather(*self.tasks)
+        self.run_task = self.run_tk(root, framerate)
+        await asyncio.gather(self.run_task, *self.tasks)
 
     async def stop(self, delay):
         await asyncio.sleep(delay)
         self.stop_flag = True
-        asyncio.get_event_loop().stop()
+        await self.run_task
+        for t in self.car_tasks + self.space_tasks:
+            await t
 
 
 class Waypoint:
@@ -115,7 +133,20 @@ class Waypoint:
         self.long = long
 
 
+def distance(ax, ay, bx, by):
+    # PYTHAGORAS - use for cartesian coordinates
+    # return math.sqrt((ax - bx)**2 + (ay - by)**2)
+
+    a = (ax, ay)
+    b = (bx, by)
+    # VINCENTY - use for lat/long, accurate and slow
+    return vincenty(a, b).meters
+
+    # GREAT CIRCLE - use for lat/long, fast and inaccurate
+
+
 class RogueCar:
+    # TODO update to use latlong
     def __init__(self, map_width, map_height, manager, starttime):
         self.destX = random.randint(0, map_width)
         self.destY = random.randint(0, map_height)
@@ -203,20 +234,20 @@ class RogueCar:
 
 
 class Car:
-    def __init__(self, lat, long):
-        self.lat = lat
-        self.long = long
+    def __init__(self, loc):
+        self.lat = loc.latitude
+        self.long = loc.longitude
         self.destX = 0
         self.destY = 0
         self.aDestX = 0
         self.aDestY = 0
         self.drawing = False
-        self.speed = 60
+        self.speed = 60  # this is in ms^-1
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
 
     def distance_to(self, x, y):
-        return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
+        return distance(x, y, self.lat, self.long)
 
     def get_position(self, now):
         if len(self.waypoints) > 1:
@@ -308,31 +339,46 @@ class ParkingLot:
         #     return False
 
 
-async def car_routine(startt, startx, starty, manager):
+async def car_routine(startt, start_loc, manager):
     await asyncio.sleep(startt)
 
-    car = Car(startx, starty)
+    car = Car(start_loc)
     manager.cars.append(car)
 
     x, y = car.aDestX, car.aDestY
-    cli = await CarWebsocket.create(base_url="ws://localhost:8765")
+    logger.info("car routine started")
+    car_id = str(uuid4())
+    cli = await CarWebsocket.create(base_url=manager.app_url.replace('http', 'ws') + "/ws", user_id=car_id)
+    logger.info("car websocket client connected")
     # request a parking space
-    await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
-    car.drawing = True
 
-    # Receive the parking allocation information
-    space = await cli.receive(wsmodels.ParkingAllocationMessage)
-    # TODO swap?
-    car.set_allocated_destination(space.lot.location.latitude, space.lot.location.longitude)
+    logger.info(f'requesting allocation for car {car_id}')
+    waiting = True
+    while waiting and not manager.stop_flag:
+        response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+        car.drawing = True
 
-    await cli.send_parking_acceptance(space.lot.id)
-
-    # TODO await confirmation of acceptance
-
-    while True:
-        # Send the location of the car at time intervals, while listening for deallocation
-        if manager.stop_flag:
+        futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
+        (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
+        space = fut.result()
+        logger.debug('got result: {}'.format(space))
+        if not isinstance(space, wsmodels.ErrorMessage):
             break
+        await asyncio.sleep(1)
+
+
+    if not manager.stop_flag:
+        logger.info(f"allocation recieved: for car {car_id}: '{space._type}'")
+        car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
+
+        await cli.send_parking_acceptance(space.lot.id)
+
+    if not manager.stop_flag:
+
+        await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
+
+    while not manager.stop_flag:
+        # Send the location of the car at time intervals, while listening for deallocation
         try:
             deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
         except futures.TimeoutError:
@@ -341,20 +387,24 @@ async def car_routine(startt, startx, starty, manager):
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
 
-async def space_routine(startt, lat, long, capacity, name, price, available, manager):
+async def space_routine(startt, start_loc, capacity, name, price, available, manager):
     await asyncio.sleep(startt)
 
-    cli = ParkingLotRest(resturl, httpclient.AsyncHTTPClient())
-    lot = restmodels.ParkingLot(capacity, name, price, restmodels.Location(float(lat), float(long)))
+    cli = ParkingLotRest(manager.app_url, httpclient.AsyncHTTPClient())
+    lot = restmodels.ParkingLot(capacity, name, price, start_loc)
+    logger.debug("creating lot...")
     response = await cli.create_lot(lot)
     lot.id = response
+    logger.info("created lot {}".format(response))
 
     simlot = ParkingLot(lot, cli, capacity)
     manager.lots.append(simlot)
 
     await asyncio.sleep(10)
 
+    logger.debug(f'changing price for lot {lot.id}')
     await simlot.change_price(1.0)
+    logger.info(f'Changed price for lot {lot.id} to {1.0}')
 
 
 async def rogue_routine(width, height, manager, startt):

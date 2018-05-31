@@ -2,6 +2,7 @@ import asyncio
 import collections
 import json
 from six import string_types
+import logging
 
 from tornado import httpclient, websocket
 from tornado.concurrent import future_set_result_unless_cancelled
@@ -11,6 +12,8 @@ import parking.shared.ws_models as ws_models
 from parking.shared.util import serialize_model
 
 HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
+
+logger = logging.getLogger('shared client')
 
 
 class ParkingLotRest(object):
@@ -54,8 +57,8 @@ class CarWebsocket(object):
         self._receive_callbacks = receive_callbacks if receive_callbacks else {}
 
     @classmethod
-    async def create(cls, base_url, receive_callbacks=None):
-        return cls(await websocket.websocket_connect(base_url), receive_callbacks)
+    async def create(cls, base_url, user_id='', receive_callbacks=None):
+        return cls(await websocket.websocket_connect(base_url + "/" + user_id), receive_callbacks)
 
     async def _send(self, message):
         if not isinstance(message, string_types):
@@ -93,6 +96,8 @@ class CarWebsocket(object):
         future = asyncio.Future()
         if self._message_queue[message_type]:
             future_set_result_unless_cancelled(future, self._message_queue[message_type].popleft())
+            # logger.info("message recieved as expected: '{}'".format(message_type))
         else:
             self._waiting[message_type] = future
+            # logger.info("unexpected message received; expected: " + str(message_type))
         return future

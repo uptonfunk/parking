@@ -1,10 +1,12 @@
 import logging
 from asyncio import AbstractEventLoop
-from typing import Optional
+from typing import Optional, List
 
 import asyncpg
+from asyncpg import Record
 
 import parking.backend.db.sql_constants as c
+from parking.shared.location import Location
 from parking.shared.rest_models import ParkingLot
 
 logger = logging.getLogger('backend')
@@ -33,6 +35,7 @@ class DbAccess(object):
         logger.info("Creating database tables.")
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                await conn.execute(c.SETUP_EXTENSIONS)
                 await conn.execute(c.PARKINGLOTS_CREATE_TABLE)
                 await conn.execute(c.ALLOCATIONS_CREATE_TABLE)
         logger.info("Database tables created.")
@@ -43,6 +46,11 @@ class DbAccess(object):
                                                p.name, p.capacity, p.location.latitude,
                                                p.location.longitude, p.price, p.capacity, 0)
         return park_id
+
+    async def get_parking_lot(self, park_id: int) -> Record:
+        async with self.pool.acquire() as conn:
+            parking_lot: Record = await conn.fetchrow(c.PARKINGLOTS_SELECT, park_id)
+        return parking_lot
 
     async def delete_parking_lot(self, park_id: int) -> Optional[int]:
         async with self.pool.acquire() as conn:
@@ -74,3 +82,28 @@ class DbAccess(object):
                 logger.warning("Tried to allocate user : '{}' when they already had an allocation.".format(user_id))
                 return False
         return True
+
+    async def get_parking_lot_allocations(self, park_id: int) -> List[Record]:
+        async with self.pool.acquire() as conn:
+            records: List[Record] = await conn.fetch(c.ALLOCATIONS_SELECT, park_id)
+        return records
+
+    async def delete_allocation(self, user_id: str) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                park_id: int = await conn.fetchval(c.ALLOCATIONS_DELETE, user_id)
+                if park_id:
+                    await conn.execute(c.PARKINGLOTS_DECREMENT_ALLOCATION, park_id)
+
+    async def get_available_parking_lots(self, location: Location,
+                                         dist_meters: int, exclusions: List[int]) -> List[Record]:
+        lat = location.latitude
+        long = location.longitude
+        async with self.pool.acquire() as conn:
+            if exclusions:
+                print(exclusions)
+                records = await conn.fetch(c.PARKINGLOTS_SELECT_WITHIN_DISTANCE_WITH_EXCLUSIONS,
+                                           lat, long, dist_meters, exclusions)
+            else:
+                records = await conn.fetch(c.PARKINGLOTS_SELECT_WITHIN_DISTANCE, lat, long, dist_meters)
+        return records
