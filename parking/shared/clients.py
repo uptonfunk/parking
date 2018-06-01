@@ -34,7 +34,10 @@ class ParkingLotRest(object):
         msgbody = serialize_model(rest_models.ParkingLotAvailableMessage(available))
         request = httpclient.HTTPRequest(f"{self.rest_url}/{lot_id}/available", body=msgbody, headers=HEADERS,
                                          method='POST')
-        await self.client.fetch(request)
+        try:
+            await self.client.fetch(request)
+        except httpclient.HTTPError:
+            logger.info("server error while updating lot availability for lot number " + str(lot_id))
 
     async def update_price(self, lot_id: int, price: float):
         msgbody = serialize_model(rest_models.ParkingLotPriceMessage(price))

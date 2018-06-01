@@ -364,11 +364,12 @@ class ParkingLot:
         self.lot = lot
         self.attempts = []
         self.cars = {}
+        self.lock = asyncio.Lock()
 
-        if (self.lot.capacity < 1) | (available < 1):
+        if (self.lot.capacity < 1) or (available < 1):
             raise ValueError("Parking capacity/availability must be positive")
 
-        if (not(isinstance(self.lot.capacity, int))) | (not(isinstance(available, int))):
+        if (not(isinstance(self.lot.capacity, int))) or (not(isinstance(available, int))):
             raise TypeError("Capacity/availability must be an integer")
 
         if available > self.lot.capacity:
@@ -383,20 +384,22 @@ class ParkingLot:
                                                              attempt.car, self, attempt.duration))
 
     async def fill_space(self) -> bool:
-        if self.available > 0:
-            await self.client.update_available(self.lot.id, self.available - 1)
-            self.available -= 1
-            return True
-        else:
-            return False
+        with (await self.lock):
+            if self.available > 0:
+                await self.client.update_available(self.lot.id, self.available - 1)
+                self.available -= 1
+                return True
+            else:
+                return False
 
     async def free_space(self) -> bool:
-        if self.available < self.lot.capacity:
-            await self.client.update_available(self.lot.id, self.available + 1)
-            self.available += 1
-            return True
-        else:
-            return False
+        with(await self.lock):
+            if self.available < self.lot.capacity:
+                await self.client.update_available(self.lot.id, self.available + 1)
+                self.available += 1
+                return True
+            else:
+                return False
 
     async def change_price(self, new_price):
         self.lot.price = new_price
@@ -430,7 +433,7 @@ async def car_routine(startt, start_loc, manager):
     logger.info(f'requesting allocation for car {car_id}')
     waiting = True
     while waiting and not manager.stop_flag:
-        response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+        await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
         car.drawing = True
 
         futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
@@ -457,6 +460,9 @@ async def car_routine(startt, start_loc, manager):
             deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
         except futures.TimeoutError:
             deallocation = None
+        if deallocation is not None:
+            logger.info("Recieved deallocation")
+            # TODO handle deallocation
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
