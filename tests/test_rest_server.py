@@ -21,14 +21,21 @@ def postgresql():
     postgresql_con.stop()
 
 
+class FakeEngine():
+    async def recalculate_allocations(self, unused: int) -> None:
+        pass
+
+
 @pytest.fixture
 def app(postgresql):
     loop: AbstractEventLoop = tornado.ioloop.IOLoop.current().asyncio_loop
+    engine: FakeEngine = FakeEngine()
     dba: DbAccess = tornado.ioloop.IOLoop.current().run_sync(
         lambda: DbAccess.create(postgresql.url(), loop=loop, init_tables=True, reset_tables=True))
     application = tornado.web.Application([(r'/spaces', ParkingLotsCreationHandler, {'dba': dba}),
                                            (r'/spaces/([0-9])+', IndividualLotDeleteHandler, {'dba': dba}),
-                                           (r'/spaces/([0-9])+/available', IndividualLotAvailableHandler, {'dba': dba}),
+                                           (r'/spaces/([0-9])+/available', IndividualLotAvailableHandler,
+                                           {'dba': dba, 'engine': engine}),
                                            (r'/spaces/([0-9])+/price', IndividualLotPriceHandler, {'dba': dba})])
     return application
 
