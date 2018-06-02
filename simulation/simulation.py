@@ -64,7 +64,7 @@ class SimManager:
             coro = car_routine(start_time, p, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
-        rogue_start = 1
+        rogue_start = 3
         for i in range(self.no_rogues):
             if random.randint(1, 2) == 1:
                 locx = random.choice([0, width])
@@ -82,12 +82,12 @@ class SimManager:
     def point_to_location(self, x: float, y: float) -> wsmodels.Location:
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
         """
-        return wsmodels.Location(x / (SCALE), y / (SCALE))
+        return wsmodels.Location(x / SCALE, y / SCALE)
 
     def loc_to_point(self, loc: wsmodels.Location):
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
         """
-        return (loc.latitude * (SCALE), loc.longitude * (SCALE))
+        return (loc.latitude * SCALE, loc.longitude * SCALE)
 
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width, height=self.height)
@@ -173,7 +173,7 @@ class RogueCar:
         self.first_attempt = None
 
         closeness = 5
-        self.speed = 60
+        self.speed = 6
         stupidity = 0.5
 
         self.waypoints.append(Waypoint(starttime, self.startX, self.startY))
@@ -281,7 +281,7 @@ class Car:
         self.aDestX = 0
         self.aDestY = 0
         self.drawing = False
-        self.speed = 60  # this is in ms^-1
+        self.speed = 6  # this is in ms^-1
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
         self.manager = manager
@@ -485,7 +485,7 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
 
 async def rogue_routine(startt, loc, dest, manager):
     await asyncio.sleep(startt)
-    rogue = await RogueCar.create_rogue(startt, loc, dest, manager)
+    rogue = await RogueCar.create_rogue(time.time(), loc, dest, manager)
     rogue.drawing = True
     manager.rogues.append(rogue)
 
