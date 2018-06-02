@@ -2,10 +2,12 @@ import asyncio
 import random
 import time
 import tkinter as tk
+import matplotlib
 from tornado import httpclient
 from concurrent import futures
 import logging
 from geopy.distance import vincenty
+from enum import Enum
 
 from uuid import uuid4
 
@@ -36,6 +38,11 @@ class SimManager:
         self.lotdict = {}
         self.stop_flag = False
         self.app_url = app_url
+        self.stats = {}
+        self.stats[Stats.ROGUECOUNT] = 0
+        self.stats[Stats.ROGUEPARKTIMEAVG] = 0
+        self.graphs = []
+        self.graphs.append(BarGraph(self, [Stats.ROGUEPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG]))
 
         count = 0
         name = 0
@@ -64,7 +71,7 @@ class SimManager:
             coro = car_routine(start_time, p, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
-        rogue_start = 1
+        rogue_start = 3
         for i in range(self.no_rogues):
             if random.randint(1, 2) == 1:
                 locx = random.choice([0, width])
@@ -90,7 +97,7 @@ class SimManager:
         return (loc.latitude * (SCALE), loc.longitude * (SCALE))
 
     async def run_tk(self, root, interval):
-        w = tk.Canvas(root, width=self.width, height=self.height)
+        w = tk.Canvas(root, width=self.width*1.5, height=self.height)
         w.pack()
         try:
             while not self.stop_flag:
@@ -109,7 +116,12 @@ class SimManager:
                     if rogue.drawing:
                         if now > rogue.starttime:
                             x, y = self.loc_to_point(wsmodels.Location(*rogue.get_position(now)))
-                            w.create_oval(x, y, x + 5, y + 5, width=0, fill='black')
+                            if x <= self.width:
+                                w.create_oval(x, y, x + 5, y + 5, width=0, fill='black')
+
+                for g in range(len(self.graphs)):
+                    graph = self.graphs[g]
+                    graph.draw(w, self.width * 1.1, self.height * 0.1, self.width * 1.4, self.height * 0.4)
 
                 root.update()
                 await asyncio.sleep(interval)
@@ -131,6 +143,53 @@ class SimManager:
         await self.run_task
         for t in self.car_tasks + self.space_tasks:
             await t
+
+
+class Stats(Enum):
+    ROGUECOUNT = 1
+    ROGUEPARKTIMEAVG = 2
+    USERCOUNT = 3
+    USERPARKTIMEAVG = 4
+    ROGUERETRY = 5
+    USERRETRY = 6
+
+
+class Graph:
+    def __init__(self, manager, stats):
+        self.manager = manager
+        self.stats = stats
+
+    def draw(self, canvas: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
+        pass
+
+
+class BarGraph(Graph):
+    def __init__(self, manager, stats):
+        super().__init__(manager, stats)
+
+    def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
+        width = bottom_right_x - top_left_x
+        height = bottom_right_y - top_left_y
+        w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
+        w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
+
+        bar_ratio = 0.6  # how much of the screen is taken up by bars vs empty space
+        segment = width / len(self.stats)
+        bar_gap = ((1 - bar_ratio) * 0.5) * segment
+
+        values = []
+        for s in range(len(self.stats)):
+            if isinstance(self.stats[s], list):
+                values += self.stats[s]
+            else:
+                values.append(self.stats[s])
+
+        for v in range(len(values)):
+            value = self.manager.stats[values[v]]
+            w.create_rectangle(v * segment + bar_gap + top_left_x,
+                               bottom_right_y - (value * 5),
+                               (v+1) * segment - bar_gap + top_left_x,
+                               bottom_right_y)
 
 
 class Waypoint:
@@ -246,7 +305,13 @@ class RogueCar:
         return float(poslat), float(poslong)
 
     def park(self):
-        pass
+        mean = self.manager.stats[Stats.ROGUEPARKTIMEAVG]
+        count = self.manager.stats[Stats.ROGUECOUNT]
+
+        newmean = ((mean * count) + (time.time() - self.starttime)) / (count + 1)
+
+        self.manager.stats[Stats.ROGUEPARKTIMEAVG] = newmean
+        self.manager.stats[Stats.ROGUECOUNT] += 1
 
     async def retry(self, now, oldlot):
         self.tried.append(oldlot)
@@ -485,7 +550,7 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
 
 async def rogue_routine(startt, loc, dest, manager):
     await asyncio.sleep(startt)
-    rogue = await RogueCar.create_rogue(startt, loc, dest, manager)
+    rogue = await RogueCar.create_rogue(time.time(), loc, dest, manager)
     rogue.drawing = True
     manager.rogues.append(rogue)
 

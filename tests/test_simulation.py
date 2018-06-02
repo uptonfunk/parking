@@ -136,6 +136,6 @@ async def test_no_parking_lots_retry_waiting(http_client, base_url):
 @pytest.mark.gen_test(run_sync=False, timeout=100)
 async def test_integrate_sim(caplog, http_client, base_url):
     caplog.set_level(logging.DEBUG)
-    sim = SimManager(50, 5, 5, 25, 155, 1000, 500, 2, 4, 100, base_url)
-    asyncio.ensure_future(sim.stop(60))
+    sim = SimManager(50, 5, 5, 25, 155, 900, 600, 2, 4, 100, base_url)
+    asyncio.ensure_future(sim.stop(180))
     await sim.run()
