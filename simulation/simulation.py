@@ -41,8 +41,12 @@ class SimManager:
         self.stats = {}
         self.stats[Stats.ROGUECOUNT] = 0
         self.stats[Stats.ROGUEPARKTIMEAVG] = 0
+        self.stats[Stats.FIRSTROGUESTARTTIME] = None
+        self.stats[Stats.ROGUERETRY] = [0]
         self.graphs = []
         self.graphs.append(BarGraph(self, [Stats.ROGUEPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG]))
+        self.graphs.append(LineGraph(self, [Stats.ROGUERETRY]))
+        self.retry_lock = asyncio.Lock()
 
         count = 0
         name = 0
@@ -51,7 +55,11 @@ class SimManager:
             if self.stop_flag:
                 break
 
-            p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
+            if False:
+                p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
+            else:
+                p = self.point_to_location(self.random_lot.randint(1, 9) * width/10,
+                                           self.random_lot.randint(1, 9) * height/10)
 
             max_al = min(max_spaces_per_lot, (no_spaces - count))
             if max_al < min_spaces_per_lot:
@@ -99,29 +107,34 @@ class SimManager:
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
         w.pack()
+
+        w.create_rectangle(1, 1, self.width, self.height, fill="orange")
+
         try:
             while not self.stop_flag:
-                w.delete("all")
+                w.delete("ani")
                 now = time.time()
                 for simlot in self.lots:
                     x, y = self.loc_to_point(simlot.lot.location)
-                    w.create_rectangle(x, y, x + (simlot.available*4), y + (simlot.available*4), width=0, fill="green")
+                    w.create_rectangle(x, y, x + (simlot.available*4), y + (simlot.available*4), width=0, fill="green", tags="ani")
 
                 for car in self.cars:
                     if car.drawing:
                         x, y = self.loc_to_point(wsmodels.Location(*car.get_position(now)))
-                        w.create_oval(x, y, x + 5, y + 5, width=0, fill='blue')
+                        w.create_oval(x, y, x + 5, y + 5, width=0, fill='blue', tags="ani")
 
                 for rogue in self.rogues:
                     if rogue.drawing:
                         if now > rogue.starttime:
                             x, y = self.loc_to_point(wsmodels.Location(*rogue.get_position(now)))
                             if x <= self.width:
-                                w.create_oval(x, y, x + 5, y + 5, width=0, fill='black')
+                                w.create_oval(x, y, x + 5, y + 5, width=0, fill='black', tags="ani")
 
+                w.delete("graph")
                 for g in range(len(self.graphs)):
                     graph = self.graphs[g]
-                    graph.draw(w, self.width * 1.1, self.height * 0.1, self.width * 1.4, self.height * 0.4)
+                    graph.draw(w, self.width * 1.1, self.height * 0.1 + (g*0.5*self.height),
+                               self.width * 1.4, self.height * 0.4 + (g*0.5*self.height))
 
                 root.update()
                 await asyncio.sleep(interval)
@@ -152,6 +165,7 @@ class Stats(Enum):
     USERPARKTIMEAVG = 4
     ROGUERETRY = 5
     USERRETRY = 6
+    FIRSTROGUESTARTTIME = 7
 
 
 class Graph:
@@ -189,7 +203,36 @@ class BarGraph(Graph):
             w.create_rectangle(v * segment + bar_gap + top_left_x,
                                bottom_right_y - (value * 5),
                                (v+1) * segment - bar_gap + top_left_x,
-                               bottom_right_y)
+                               bottom_right_y, tags="graph")
+
+
+class LineGraph(Graph):
+    def __init__(self, manager, stats):
+        super().__init__(manager, stats)
+
+    def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
+        width = bottom_right_x - top_left_x
+        height = bottom_right_y - top_left_y
+        w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
+        w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
+
+        max_lines = int(width / 10)
+
+        values = self.manager.stats[self.stats[0]]
+        # for s in range(len(self.stats)):
+        #     if isinstance(self.stats[s], list):
+        #         values += self.stats[s]
+        #     else:
+        #         values.append(self.stats[s])
+
+        if len(values) > max_lines:
+            values = values[-max_lines:]
+
+        length = width/(len(values))
+        for v in range(len(values) - 1):
+            w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v] * 8,
+                          top_left_x + (v+2) * length, bottom_right_y - values[v+1] * 8,
+                          tags = "graph")
 
 
 class Waypoint:
@@ -225,6 +268,8 @@ class RogueCar:
         self.destY = dest.longitude
         self.waypoints = []
         self.drawing = True
+        self.drawhozpos = True
+        self.drawverpos = True
         self.starttime = starttime
         self.bestLot = None
         self.tried = []
@@ -257,10 +302,13 @@ class RogueCar:
 
             duration = distance / self.speed
 
+            self.waypoints += get_route(wsmodels.Location(currentX, currentY),
+                                        wsmodels.Location(newX, newY), lasttime, self.speed)
+
             currentX = newX
             currentY = newY
 
-            self.waypoints.append(Waypoint(lasttime + duration, newX, newY))
+            # self.waypoints.append(Waypoint(lasttime + duration, newX, newY))
 
             lasttime += duration
 
@@ -276,7 +324,8 @@ class RogueCar:
         # drive to the closest lot
         duration = bestDistance / self.speed
         arrival = lasttime + duration
-        self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
+        #self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
+        self.waypoints += get_route(wsmodels.Location(currentX, currentY), bestLot.lot.location, lasttime, self.speed)
         self.bestLot = bestLot
         attempt = Attempt(arrival, 20, self)
         self.first_attempt = attempt
@@ -302,18 +351,40 @@ class RogueCar:
         progress = (now - start.time) / timediff
         poslat = start.lat + (latdiff * progress)
         poslong = start.long + (longdiff * progress)
+
+        if latdiff > 0:
+            self.drawhozpos = True
+        else:
+            self.drawhozpos = False
+
+        if longdiff > 0:
+            self.drawverpos = True
+        else:
+            self.drawverpos = False
+
         return float(poslat), float(poslong)
 
     def park(self):
+        now = time.time()
+
         mean = self.manager.stats[Stats.ROGUEPARKTIMEAVG]
         count = self.manager.stats[Stats.ROGUECOUNT]
 
-        newmean = ((mean * count) + (time.time() - self.starttime)) / (count + 1)
+        newmean = ((mean * count) + (now - self.starttime)) / (count + 1)
 
         self.manager.stats[Stats.ROGUEPARKTIMEAVG] = newmean
         self.manager.stats[Stats.ROGUECOUNT] += 1
 
     async def retry(self, now, oldlot):
+        now = time.time()
+
+        time_index = int((now - self.manager.stats[Stats.FIRSTROGUESTARTTIME]) // 0.2)
+
+        while len(self.manager.stats[Stats.ROGUERETRY]) < time_index + 1:
+            self.manager.stats[Stats.ROGUERETRY].append(0)
+
+        self.manager.stats[Stats.ROGUERETRY][time_index] += 1
+
         self.tried.append(oldlot)
         if len(self.tried) == len(self.manager.lots):
             self.tried = []
@@ -332,7 +403,8 @@ class RogueCar:
         duration = bestDistance / self.speed
         arrival = now + duration
         self.drawing = True
-        self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
+        # self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
+        self.waypoints += get_route(oldlot.lot.location, bestLot.lot.location, now, self.speed)
         attempt = Attempt(arrival, 20, self)
         await bestLot.register(attempt)
 
@@ -357,16 +429,44 @@ class Car:
         return geodistance(x, y, lat, long)
 
     def get_position(self, now):
-        if len(self.waypoints) > 1:
-            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
-            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
-            timediff = self.waypoints[-1].time - self.waypoints[-2].time
-            progress = (now - self.waypoints[-2].time) / timediff
-            poslat = self.waypoints[-2].lat + (latdiff * progress)
-            poslong = self.waypoints[-2].long + (longdiff * progress)
-            return poslat, poslong
-        else:
-            return self.lat, self.long
+        # if len(self.waypoints) > 1:
+        #     latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
+        #     longdiff = self.waypoints[-1].long - self.waypoints[-2].long
+        #     timediff = self.waypoints[-1].time - self.waypoints[-2].time
+        #     progress = (now - self.waypoints[-2].time) / timediff
+        #     poslat = self.waypoints[-2].lat + (latdiff * progress)
+        #     poslong = self.waypoints[-2].long + (longdiff * progress)
+        #     return poslat, poslong
+        # else:
+        #     return self.lat, self.long
+
+        if (len(self.waypoints)) == 1:
+            return self.waypoints[0].lat, self.waypoints[0].long
+
+        endTime = 0
+        waypointIndex = 0
+
+        while endTime < now:
+            waypointIndex += 1
+            if waypointIndex > len(self.waypoints) - 1:
+                # logger.info("swaga " + str(waypointIndex) + " " + str(len(self.waypoints)))
+                # self.drawing = False
+                return 1.0, 1.0
+            endTime = self.waypoints[waypointIndex].time
+
+        self.drawing = True
+
+        start = self.waypoints[waypointIndex - 1]
+        end = self.waypoints[waypointIndex]
+
+        latdiff = end.lat - start.lat
+        longdiff = end.long - start.long
+        timediff = end.time - start.time
+        progress = (now - start.time) / timediff
+        poslat = start.lat + (latdiff * progress)
+        poslong = start.long + (longdiff * progress)
+        # logger.info(str(start.long) + " " + str(longdiff))
+        return float(poslat), float(poslong)
 
     async def set_allocated_destination(self, lot):
         self.aDestX = lot.location.latitude
@@ -374,17 +474,25 @@ class Car:
         now = time.time()
         newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
 
+        logger.info("cutting " + str(self.waypoints))
+
         # cut the last waypoint short to car's current place and time
         self.waypoints[-1].time = now
         lat, long = self.get_position(now)
         self.waypoints[-1].lat = lat
         self.waypoints[-1].long = long
 
-        self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
+        # self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
+        self.waypoints += get_route(wsmodels.Location(lat, long), lot.location, self.waypoints[-1].time, self.speed)
+        for w in self.waypoints:
+            # logger.info("yolo " + str(w.lat) + " " + str(w.long) + " " + str(w.time))
+            pass
 
         attempt = Attempt(newtime, 20, self)
 
         await self.manager.lotdict[lot.id].register(attempt)
+
+        logger.info("huehuehue " + str(len(self.waypoints)))
 
     def park(self):
         logger.info("successfully parked user")
@@ -414,6 +522,22 @@ class Car:
                                        newlot.lot.location.latitude, newlot.lot.location.longitude))
         self.drawing = True
         self.set_allocated_destination(self.manager.lotdict[newlot.lot.id])
+
+
+def get_route(start, end, now, speed):
+    if False:
+        distance = geodistance(start.latitude, start.longitude, end.latitude, end.longitude)
+        newtime = distance / speed
+        return [Waypoint(now + newtime, end.latitude, end.longitude)]
+    else:
+        hozdist = geodistance(start.latitude, start.longitude, end.latitude, start.longitude)
+        verdist = geodistance(end.latitude, start.longitude, end.latitude, end.longitude)
+
+        hoztime = hozdist / speed
+        vertime = verdist / speed
+
+        return [Waypoint(now + hoztime, end.latitude, start.longitude),
+                Waypoint(now + hoztime + vertime, end.latitude, end.longitude)]
 
 
 class Attempt:
@@ -492,13 +616,15 @@ async def car_routine(startt, start_loc, manager):
     car = Car(start_loc, manager, cli)
     manager.cars.append(car)
 
-    x, y = car.aDestX, car.aDestY
+    # x, y = car.aDestX, car.aDestY
+    dest = manager.point_to_location(random.randint(0, manager.width), random.randint(0, manager.height))
+    # TODO this was originally setting everything to 0 - do this properly later
 
     # request a parking space
     logger.info(f'requesting allocation for car {car_id}')
     waiting = True
     while waiting and not manager.stop_flag:
-        await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
+        await cli.send_parking_request(dest, {})
         car.drawing = True
 
         futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
@@ -550,6 +676,9 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
 
 async def rogue_routine(startt, loc, dest, manager):
     await asyncio.sleep(startt)
+    now = time.time()
+    if manager.stats[Stats.FIRSTROGUESTARTTIME] is None:
+        manager.stats[Stats.FIRSTROGUESTARTTIME] = now
     rogue = await RogueCar.create_rogue(time.time(), loc, dest, manager)
     rogue.drawing = True
     manager.rogues.append(rogue)
