@@ -270,7 +270,7 @@ async def car_routine(startt, start_loc, manager):
         await cli.send_parking_acceptance(space.lot.id)
 
     if not manager.stop_flag:
-        await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
+        await cli.receive(wsmodels.ConfirmationMessage)
 
     while not manager.stop_flag:
         # Send the location of the car at time intervals, while listening for deallocation
