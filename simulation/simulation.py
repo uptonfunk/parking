@@ -58,8 +58,8 @@ class SimManager:
             if False:
                 p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
             else:
-                p = self.point_to_location(self.random_lot.randint(1, 9) * width/10,
-                                           self.random_lot.randint(1, 9) * height/10)
+                p = self.point_to_location(self.random_lot.randint(1, 9) * height/10,
+                                           self.random_lot.randint(1, 9) * width/10)
 
             max_al = min(max_spaces_per_lot, (no_spaces - count))
             if max_al < min_spaces_per_lot:
@@ -102,7 +102,8 @@ class SimManager:
     def loc_to_point(self, loc: wsmodels.Location):
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
         """
-        return (loc.latitude * (SCALE), loc.longitude * (SCALE))
+        # return (loc.latitude * (SCALE), loc.longitude * (SCALE))
+        return (loc.longitude * (SCALE), loc.latitude * (SCALE))
 
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
