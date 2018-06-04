@@ -47,6 +47,36 @@ async def test_create_parking_lot(http_client, base_url):
     assert allocated.lot.id == lot.id
 
 @pytest.mark.gen_test(run_sync=False)
+async def test_create_parking_lot_confirm(caplog, http_client, base_url):
+    caplog.set_level(logging.INFO)
+
+    # create parking lot...
+    cli = ParkingLotRest(base_url, http_client)
+    lot = ParkingLot(10, 'a', 1.0, Location(0.0, 1.0))
+
+    response = await cli.create_lot(lot)
+    lot.id = response
+    simlot = SimPL(lot, cli, 10)
+
+    await asyncio.sleep(1)
+
+    # create car
+    car_id = str(uuid4())
+    car_cli = await CarWebsocket.create(base_url=base_url.replace('http', 'ws') + "/ws", user_id=car_id)
+    response = await car_cli.send_parking_request(Location(0.0, 1.0), {})
+
+    # ask for allocation
+    allocated = await car_cli.receive(wsmodels.ParkingAllocationMessage)
+    assert allocated.lot.id == lot.id
+
+    # accept allocation
+    await car_cli.send_parking_acceptance(allocated.lot.id)
+
+    # wait for confirmation
+    await car_cli.receive(wsmodels.ConfirmationMessage)
+
+
+@pytest.mark.gen_test(run_sync=False)
 async def test_create_multiple_parking_lot(http_client, base_url):
     cli = ParkingLotRest(base_url, http_client)
 
@@ -103,6 +133,7 @@ async def test_no_parking_lots_retry(http_client, base_url):
 
     assert allocated.lot.id == lot.id
 
+
 @pytest.mark.gen_test(run_sync=False)
 async def test_no_parking_lots(http_client, base_url):
     car_id = str(uuid4())
@@ -114,6 +145,7 @@ async def test_no_parking_lots(http_client, base_url):
     logger.debug(f'allocation failed: {allocated}')
 
     assert allocated.error.msg == 'No parking lot available.'
+
 
 @pytest.mark.gen_test(run_sync=False)
 async def test_no_parking_lots_retry_waiting(http_client, base_url):
@@ -129,9 +161,30 @@ async def test_no_parking_lots_retry_waiting(http_client, base_url):
     assert isinstance(space, wsmodels.ErrorMessage)
     assert space.error.msg == 'No parking lot available.'
 
-@pytest.mark.gen_test(run_sync=False, timeout=100)
+
+@pytest.mark.gen_test(run_sync=False, timeout=60)
 async def test_integrate_sim(caplog, http_client, base_url):
-    caplog.set_level(logging.DEBUG)
-    sim = SimManager(20, 5, 5, 5, 500, 500, 2, 4, 100, base_url)
-    asyncio.ensure_future(sim.stop(60))
+    caplog.set_level(logging.INFO)
+    car_positions = []
+    sim = SimManager(
+        no_spaces=5, 
+        min_spaces_per_lot=5, 
+        max_spaces_per_lot=5, 
+        no_cars=1, 
+        width=500, height=500, 
+        parking_lot_seed=123, 
+        car_seed=123, 
+        max_time=100, 
+        app_url=base_url
+    )
+
+    for car in sim.cars:
+        car_positions.append((car, car.lat, car.long))
+
+    asyncio.ensure_future(sim.stop(10))
     await sim.run()
+
+    # for now let's ensure the cars moved from their initial locations
+    # this is sufficient to show the system is all connected
+    for car, lat, long in car_positions:
+        assert (lat, long) != (car.lat, car.long)
