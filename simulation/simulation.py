@@ -2,7 +2,6 @@ import asyncio
 import random
 import time
 import tkinter as tk
-import math
 from tornado import httpclient
 from concurrent import futures
 import logging
@@ -33,6 +32,8 @@ class SimManager:
         self.lots = []
         self.stop_flag = False
         self.app_url = app_url
+
+        self.stop_future = asyncio.Future()
 
         count = 0
         name = 0
@@ -102,13 +103,12 @@ class SimManager:
         root = tk.Tk()
         self.run_task = self.run_tk(root, framerate)
         await asyncio.gather(self.run_task, *self.tasks)
+        self.stop_future.set_result(True)
 
     async def stop(self, delay):
         await asyncio.sleep(delay)
         self.stop_flag = True
-        await self.run_task
-        for t in self.car_tasks + self.space_tasks:
-            await t
+        await self.stop_future
 
 
 class Waypoint:
@@ -249,7 +249,7 @@ async def car_routine(startt, start_loc, manager):
     logger.info("car websocket client connected")
     # request a parking space
 
-    logger.info(f'requesting allocation for car {car_id}')
+    logger.info(f'<Car {car_id}>: requesting allocation')
     waiting = True
     while waiting and not manager.stop_flag:
         response = await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
@@ -258,20 +258,18 @@ async def car_routine(startt, start_loc, manager):
         futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
         (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
         space = fut.result()
-        logger.debug('got result: {}'.format(space))
+        logger.debug(f'<Car {car_id}>: got result: {space}')
         if not isinstance(space, wsmodels.ErrorMessage):
             break
         await asyncio.sleep(1)
 
-
     if not manager.stop_flag:
-        logger.info(f"allocation recieved: for car {car_id}: '{space._type}'")
+        logger.info(f"<Car {car_id}>: allocation recieved for '{space._type}'")
         car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
 
         await cli.send_parking_acceptance(space.lot.id)
 
     if not manager.stop_flag:
-
         await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
 
     while not manager.stop_flag:
@@ -280,6 +278,7 @@ async def car_routine(startt, start_loc, manager):
             deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
         except futures.TimeoutError:
             deallocation = None
+        logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
