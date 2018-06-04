@@ -210,13 +210,13 @@ class ParkingLot:
 
     async def change_price(self, new_price):
         self.lot.price = new_price
-        response = await self.client.update_price(self.lot.id, new_price)
+        await self.client.update_price(self.lot.id, new_price)
         # TODO error handling
         # if response.error:
         #     pass
 
     async def delete(self):
-        response = await self.client.delete_lot(self.lot.id)
+        await self.client.delete_lot(self.lot.id)
         # if response.error:
         #     pass
 
@@ -227,7 +227,7 @@ class ParkingLot:
         if not(isinstance(value, int)):
             raise TypeError("Availability must be an integer")
 
-        response = await self.client.update_available(self.lot.id, value)
+        await self.client.update_available(self.lot.id, value)
 
         # if response.error == "200":
         #     self.available = value
@@ -275,9 +275,9 @@ async def car_routine(startt, start_loc, manager):
     while not manager.stop_flag:
         # Send the location of the car at time intervals, while listening for deallocation
         try:
-            deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
+            await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
         except futures.TimeoutError:
-            deallocation = None
+            pass
         logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
@@ -305,8 +305,7 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
 if __name__ == '__main__':
     sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
     asyncio.ensure_future(sim.run())
-    #stop simulation after 10 seconds
+    # stop simulation after 10 seconds
     asyncio.ensure_future(sim.stop(10))
     asyncio.get_event_loop().run_forever()
-    #can access sim variables here for tests
-
+    # can access sim variables here for tests
