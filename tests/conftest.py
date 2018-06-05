@@ -13,4 +13,4 @@ def postgresql():
 
 @pytest.fixture
 def app(postgresql):
-    return make_app(postgresql.url(), _init_tables=True, _reset_tables=True)
+    return make_app(postgresql.url(), init_tables=True, reset_tables=True)
