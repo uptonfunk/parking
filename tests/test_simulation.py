@@ -1,15 +1,13 @@
 # test_simulation.py
 
-import json
 import asyncio
 import logging
 from uuid import uuid4
 
 from parking.shared.location import Location
-from parking.shared.rest_models import ParkingLot, ParkingLotCreationResponse
+from parking.shared.rest_models import ParkingLot
 import parking.shared.ws_models as wsmodels
-from parking.shared.util import serialize_model
-from parking.shared.clients import CarWebsocket, ParkingLotRest
+from parking.shared.clients import CarWebsocket
 
 from simulation.simulation import SimManager, ParkingLotRest, ParkingLot as SimPL
 
@@ -46,6 +44,7 @@ async def test_create_parking_lot(http_client, base_url):
 
     assert allocated.lot.id == lot.id
 
+    
 @pytest.mark.gen_test(run_sync=False)
 async def test_create_parking_lot_confirm(caplog, http_client, base_url):
     caplog.set_level(logging.INFO)
@@ -99,6 +98,7 @@ async def test_create_multiple_parking_lot(http_client, base_url):
     logger.debug(f'allocation recieved: {allocated}')
 
     assert allocated.lot.id == lot.id
+
 
 @pytest.mark.gen_test(run_sync=False)
 async def test_no_parking_lots_retry(http_client, base_url):
@@ -188,3 +188,4 @@ async def test_integrate_sim(caplog, http_client, base_url):
     # this is sufficient to show the system is all connected
     for car, lat, long in car_positions:
         assert (lat, long) != (car.lat, car.long)
+        

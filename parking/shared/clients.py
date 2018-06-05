@@ -34,7 +34,10 @@ class ParkingLotRest(object):
         msgbody = serialize_model(rest_models.ParkingLotAvailableMessage(available))
         request = httpclient.HTTPRequest(f"{self.rest_url}/{lot_id}/available", body=msgbody, headers=HEADERS,
                                          method='POST')
-        await self.client.fetch(request)
+        try:
+            await self.client.fetch(request)
+        except httpclient.HTTPError:
+            logger.info("server error while updating lot availability for lot number " + str(lot_id))
 
     async def update_price(self, lot_id: int, price: float):
         msgbody = serialize_model(rest_models.ParkingLotPriceMessage(price))
@@ -97,8 +100,8 @@ class CarWebsocket(object):
         future = asyncio.Future()
         if self._message_queue[message_type]:
             future_set_result_unless_cancelled(future, self._message_queue[message_type].popleft())
-            logger.info("message recieved as expected: '{}'".format(message_type))
+            logger.debug("message recieved as expected: '{}'".format(message_type))
         else:
             self._waiting[message_type] = future
-            logger.info("unexpected message received; expected: " + str(message_type))
+            logger.debug("unexpected message received; expected: " + str(message_type))
         return future
