@@ -49,6 +49,7 @@ class SimManager:
 
         count = 0
         name = 0
+        locs = []
 
         while count < num_spaces:
             if self.stop_flag:
@@ -57,8 +58,18 @@ class SimManager:
             if False:
                 p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
             else:
-                p = self.point_to_location(self.random_lot.randint(1, 9) * height/10,
-                                           self.random_lot.randint(1, 9) * width/10)
+                empty = False
+                while not empty:
+                    p = self.point_to_location(self.random_lot.randint(1, 9) * height/10,
+                                               self.random_lot.randint(1, 9) * width/10)
+                    empty = True
+                    for loc in locs:
+                        if loc.longitude == p.longitude and loc.latitude == p.latitude:
+                            empty = False
+
+                logger.info("ptoloc " + str(self.loc_to_point(p)))
+
+            locs.append(p)
 
             max_al = min(max_spaces_per_lot, (num_spaces - count))
             if max_al < min_spaces_per_lot:
