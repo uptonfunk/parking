@@ -7,11 +7,11 @@ from .simulation import SimManager
 
 def main(base_url, num_spaces=5, num_cars=1, num_rogues=1, parking_seed=time.time(), car_seed=time.time()):
     sim = SimManager(
-        no_spaces=num_spaces,
+        num_spaces=num_spaces,
         min_spaces_per_lot=5,
         max_spaces_per_lot=5,
-        no_cars=num_cars,
-        no_rogues=num_rogues,
+        num_cars=num_cars,
+        num_rogues=num_rogues,
         width=500, height=500,
         parking_lot_seed=parking_seed,
         car_seed=car_seed,

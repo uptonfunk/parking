@@ -167,11 +167,11 @@ async def test_integrate_sim(caplog, http_client, base_url):
     caplog.set_level(logging.INFO)
     car_positions = []
     sim = SimManager(
-        no_spaces=5,
+        num_spaces=5,
         min_spaces_per_lot=5,
         max_spaces_per_lot=5,
-        no_cars=1,
-        no_rogues=5,
+        num_cars=1,
+        num_rogues=5,
         width=500, height=500,
         parking_lot_seed=123,
         car_seed=123,
