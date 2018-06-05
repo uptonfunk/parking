@@ -73,9 +73,16 @@ class SimManager:
             name += 1
 
         for i in range(self.no_cars):
-            start_time = 1
+            start_time = 3
+            if random.randint(1, 2) == 1:
+                locx = random.choice([0, width])
+                locy = random.randint(0, height)
+            else:
+                locx = random.randint(0, width)
+                locy = random.choice([0, height])
+            loc = self.point_to_location(locx, locy)
             p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
-            coro = car_routine(start_time, p, self)
+            coro = car_routine(start_time + i/10, loc, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         rogue_start = 3
@@ -324,7 +331,7 @@ class RogueCar:
         #self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
         self.waypoints += get_route(wsmodels.Location(currentX, currentY), bestLot.lot.location, lasttime, self.speed)
         self.bestLot = bestLot
-        attempt = Attempt(arrival, 20, self)
+        attempt = Attempt(self.waypoints[-1].time, 20, self)
         self.first_attempt = attempt
         self.tried.append(bestLot)
 
@@ -335,8 +342,8 @@ class RogueCar:
         while endTime < now:
             waypointIndex += 1
             if waypointIndex > len(self.waypoints) - 1:
-                self.drawing = False
-                return 1.0, 1.0
+                #self.drawing = False
+                return self.waypoints[-1].long, self.waypoints[-1].lat
             endTime = self.waypoints[waypointIndex].time
 
         start = self.waypoints[waypointIndex - 1]
@@ -401,8 +408,12 @@ class RogueCar:
         arrival = now + duration
         self.drawing = True
         # self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
-        self.waypoints += get_route(oldlot.lot.location, bestLot.lot.location, now, self.speed)
-        attempt = Attempt(arrival, 20, self)
+        rp = get_random_point(self.manager)
+        # self.waypoints += get_route(oldlot.lot.location, bestLot.lot.location, now, self.speed)
+        self.waypoints += get_route(oldlot.lot.location, rp, now, self.speed)
+        self.waypoints += get_route(rp, bestLot.lot.location, self.waypoints[-1].time, self.speed)
+        # attempt = Attempt(arrival, 20, self)
+        attempt = Attempt(self.waypoints[-1].time, 20, self)
         await bestLot.register(attempt)
 
 
@@ -479,7 +490,7 @@ class Car:
         for w in self.waypoints:
             pass
 
-        attempt = Attempt(newtime, 20, self)
+        attempt = Attempt(self.waypoints[-1].time, 20, self)
 
         await self.manager.lotdict[lot.id].register(attempt)
 
@@ -527,6 +538,15 @@ def get_route(start, end, now, speed):
 
         return [Waypoint(now + hoztime, end.latitude, start.longitude),
                 Waypoint(now + hoztime + vertime, end.latitude, end.longitude)]
+
+
+def get_random_point(manager):
+    if False:
+        pass
+    else:
+        p = manager.point_to_location(manager.random_lot.randint(1, 9) * manager.height / 10,
+                                      manager.random_lot.randint(1, 9) * manager.width / 10)
+        return p
 
 
 class Attempt:
@@ -675,6 +695,7 @@ async def rogue_routine(startt, loc, dest, manager):
 
 async def attempt_routine(delay, car, plot: ParkingLot, duration):
     await asyncio.sleep(delay)
+    car.drawing = False
     success = await plot.fill_space()
     now = time.time()
     if success:
@@ -682,6 +703,7 @@ async def attempt_routine(delay, car, plot: ParkingLot, duration):
         await asyncio.sleep(duration)
         await plot.free_space()
     else:
+        car.drawing = True
         await car.retry(now, plot)
 
 if __name__ == '__main__':
