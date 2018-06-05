@@ -25,8 +25,8 @@ class SimManager:
         self.random_lot = random.Random(parking_lot_seed)
         self.random_car = random.Random(car_seed)
         self.width, self.height = width, height
-        self.num_cars = num_cars
-        self.num_rogues = num_rogues
+        self.num_cars = int(num_cars)
+        self.num_rogues = int(num_rogues)
         self.car_tasks = []
         self.space_tasks = []
         self.rogue_tasks = []
@@ -53,7 +53,7 @@ class SimManager:
         name = 0
         locs = []
 
-        while count < num_spaces:
+        while count < int(num_spaces):
             if self.stop_flag:
                 break
 
@@ -73,7 +73,7 @@ class SimManager:
 
             locs.append(p)
 
-            max_al = min(max_spaces_per_lot, (num_spaces - count))
+            max_al = min(int(max_spaces_per_lot), (int(num_spaces) - count))
             if max_al < min_spaces_per_lot:
                 n = max_al  # could potentially be smaller than min spaces per lot
             else:
@@ -723,9 +723,3 @@ async def attempt_routine(delay, car, plot: ParkingLot, duration):
     else:
         car.drawing = True
         await car.retry(now, plot)
-
-if __name__ == '__main__':
-    sim = SimManager(2000, 20, 70, 50, 50, 1000, 500, 2, 4, 100, "http://127.0.0.1:8888")
-    asyncio.ensure_future(sim.run())
-    asyncio.ensure_future(sim.stop(60))
-    asyncio.get_event_loop().run_forever()
