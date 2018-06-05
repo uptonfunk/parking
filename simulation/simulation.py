@@ -450,8 +450,6 @@ class Car:
         while endTime < now:
             waypointIndex += 1
             if waypointIndex > len(self.waypoints) - 1:
-                # logger.info("swaga " + str(waypointIndex) + " " + str(len(self.waypoints)))
-                # self.drawing = False
                 return 1.0, 1.0
             endTime = self.waypoints[waypointIndex].time
 
@@ -466,7 +464,6 @@ class Car:
         progress = (now - start.time) / timediff
         poslat = start.lat + (latdiff * progress)
         poslong = start.long + (longdiff * progress)
-        # logger.info(str(start.long) + " " + str(longdiff))
         return float(poslat), float(poslong)
 
     async def set_allocated_destination(self, lot):
@@ -474,8 +471,6 @@ class Car:
         self.aDestY = lot.location.longitude
         now = time.time()
         newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
-
-        logger.info("cutting " + str(self.waypoints))
 
         # cut the last waypoint short to car's current place and time
         self.waypoints[-1].time = now
@@ -486,14 +481,11 @@ class Car:
         # self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
         self.waypoints += get_route(wsmodels.Location(lat, long), lot.location, self.waypoints[-1].time, self.speed)
         for w in self.waypoints:
-            # logger.info("yolo " + str(w.lat) + " " + str(w.long) + " " + str(w.time))
             pass
 
         attempt = Attempt(newtime, 20, self)
 
         await self.manager.lotdict[lot.id].register(attempt)
-
-        logger.info("huehuehue " + str(len(self.waypoints)))
 
     def park(self):
         logger.info("successfully parked user")
