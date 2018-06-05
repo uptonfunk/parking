@@ -67,6 +67,7 @@ class CarWebsocket(object):
         if not isinstance(message, string_types):
             message = serialize_model(message)
         await self._ws.write_message(message)
+        logger.info("message sent: '{}'")  # .format(message._type))
 
     async def send_location(self, location: rest_models.Location):
         await self._send(ws_models.LocationUpdateMessage(location))

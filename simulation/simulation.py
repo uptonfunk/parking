@@ -47,6 +47,9 @@ class SimManager:
         self.graphs.append(LineGraph(self, [Stats.ROGUERETRY]))
         self.retry_lock = asyncio.Lock()
 
+        self.stop_future = asyncio.Future()
+
+
         count = 0
         name = 0
 
@@ -101,7 +104,6 @@ class SimManager:
     def loc_to_point(self, loc: wsmodels.Location):
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
         """
-        # return (loc.latitude * (SCALE), loc.longitude * (SCALE))
         return (loc.longitude * (SCALE), loc.latitude * (SCALE))
 
     async def run_tk(self, root, interval):
@@ -147,12 +149,12 @@ class SimManager:
         self.run_task = self.run_tk(root, framerate)
         await asyncio.gather(self.run_task, *self.tasks)
 
+        self.stop_future.set_result(True)
+
     async def stop(self, delay):
         await asyncio.sleep(delay)
         self.stop_flag = True
-        await self.run_task
-        for t in self.car_tasks + self.space_tasks:
-            await t
+        await self.stop_future
 
 
 class Stats(Enum):
@@ -230,7 +232,6 @@ class LineGraph(Graph):
             w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v] * 8,
                           top_left_x + (v+2) * length, bottom_right_y - values[v+1] * 8,
                           tags = "graph")
-
 
 class Waypoint:
     def __init__(self, timestamp, lat, long):
@@ -632,7 +633,7 @@ async def car_routine(startt, start_loc, manager):
 
     if not manager.stop_flag:
 
-        await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
+        await cli.receive(wsmodels.ConfirmationMessage)
 
     while not manager.stop_flag:
         # Send the location of the car at time intervals, while listening for deallocation
@@ -643,6 +644,7 @@ async def car_routine(startt, start_loc, manager):
         if deallocation is not None:
             logger.info("Recieved deallocation")
             # TODO handle deallocation
+        logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
@@ -655,6 +657,7 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
     logger.debug("creating lot...")
     response = await cli.create_lot(lot)
     lot.id = response
+    logger.info("created lot {}".format(response))
 
     logger.info("created lot {}".format(response))
 
