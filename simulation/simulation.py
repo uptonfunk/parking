@@ -684,7 +684,7 @@ async def rogue_routine(startt, loc, dest, manager):
 
 
 async def attempt_routine(arrival_time, car, plot: ParkingLot, duration):
-    delay = arrival_time = time.time()
+    delay = arrival_time - time.time()
     await asyncio.sleep(delay)
     success = await plot.fill_space()
     now = time.time()
