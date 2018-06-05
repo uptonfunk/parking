@@ -31,11 +31,12 @@ def main(temp_db: bool, db_url: str, reset_tables: bool):
     if temp_db:
         with testing.postgresql.Postgresql() as postgresql:
             app = make_app(postgresql.url(), _init_tables=True)
+            app.listen(8888)
+            tornado.ioloop.IOLoop.current().start()
     else:
         app = make_app(db_url, _reset_tables=reset_tables)
-
-    app.listen(8888)
-    tornado.ioloop.IOLoop.current().start()
+        app.listen(8888)
+        tornado.ioloop.IOLoop.current().start()
 
 
 if __name__ == "__main__":
