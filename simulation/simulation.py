@@ -20,13 +20,13 @@ SCALE = 110 * 1000  # the lat/long scaling factor
 
 
 class SimManager:
-    def __init__(self, no_spaces, min_spaces_per_lot, max_spaces_per_lot, no_cars,
-                 no_rogues, width, height, parking_lot_seed, car_seed, max_time, app_url):
+    def __init__(self, num_spaces, min_spaces_per_lot, max_spaces_per_lot, num_cars,
+                 num_rogues, width, height, parking_lot_seed, car_seed, max_time, app_url):
         self.random_lot = random.Random(parking_lot_seed)
         self.random_car = random.Random(car_seed)
         self.width, self.height = width, height
-        self.no_cars = no_cars
-        self.no_rogues = no_rogues
+        self.num_cars = num_cars
+        self.num_rogues = num_rogues
         self.car_tasks = []
         self.space_tasks = []
         self.rogue_tasks = []
@@ -50,7 +50,7 @@ class SimManager:
         count = 0
         name = 0
 
-        while count < no_spaces:
+        while count < num_spaces:
             if self.stop_flag:
                 break
 
@@ -60,7 +60,7 @@ class SimManager:
                 p = self.point_to_location(self.random_lot.randint(1, 9) * height/10,
                                            self.random_lot.randint(1, 9) * width/10)
 
-            max_al = min(max_spaces_per_lot, (no_spaces - count))
+            max_al = min(max_spaces_per_lot, (num_spaces - count))
             if max_al < min_spaces_per_lot:
                 n = max_al  # could potentially be smaller than min spaces per lot
             else:
@@ -72,7 +72,7 @@ class SimManager:
             count += n
             name += 1
 
-        for i in range(self.no_cars):
+        for i in range(self.num_cars):
             start_time = 3
             if random.randint(1, 2) == 1:
                 locx = random.choice([0, width])
@@ -86,7 +86,7 @@ class SimManager:
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         rogue_start = 3
-        for i in range(self.no_rogues):
+        for i in range(self.num_rogues):
             if random.randint(1, 2) == 1:
                 locx = random.choice([0, width])
                 locy = random.randint(0, height)
@@ -653,6 +653,7 @@ async def car_routine(startt, start_loc, manager):
     if not manager.stop_flag:
 
         await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
+        logger.info("conf recieved")
 
     while not manager.stop_flag:
         # Send the location of the car at time intervals, while listening for deallocation
@@ -707,7 +708,7 @@ async def attempt_routine(delay, car, plot: ParkingLot, duration):
         await car.retry(now, plot)
 
 if __name__ == '__main__':
-    sim = SimManager(2000, 20, 70, 50, 50, 1000, 500, 2, 4, 100, "127.0.0.1")
+    sim = SimManager(2000, 20, 70, 50, 50, 1000, 500, 2, 4, 100, "http://127.0.0.1:8888")
     asyncio.ensure_future(sim.run())
     asyncio.ensure_future(sim.stop(60))
     asyncio.get_event_loop().run_forever()
