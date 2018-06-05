@@ -18,6 +18,7 @@ HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
 logger = logging.getLogger('simulation_tests')
 logger.setLevel(logging.DEBUG)
 
+
 @pytest.mark.gen_test(run_sync=False)
 async def test_create_parking_lot(http_client, base_url):
     cli = ParkingLotRest(base_url, http_client)
@@ -44,7 +45,7 @@ async def test_create_parking_lot(http_client, base_url):
 
     assert allocated.lot.id == lot.id
 
-    
+
 @pytest.mark.gen_test(run_sync=False)
 async def test_create_parking_lot_confirm(caplog, http_client, base_url):
     caplog.set_level(logging.INFO)
@@ -55,7 +56,6 @@ async def test_create_parking_lot_confirm(caplog, http_client, base_url):
 
     response = await cli.create_lot(lot)
     lot.id = response
-    simlot = SimPL(lot, cli, 10)
 
     await asyncio.sleep(1)
 
@@ -167,15 +167,15 @@ async def test_integrate_sim(caplog, http_client, base_url):
     caplog.set_level(logging.INFO)
     car_positions = []
     sim = SimManager(
-        no_spaces=5, 
-        min_spaces_per_lot=5, 
-        max_spaces_per_lot=5, 
-        no_cars=1, 
+        no_spaces=5,
+        min_spaces_per_lot=5,
+        max_spaces_per_lot=5,
+        no_cars=1,
         no_rogues=5,
-        width=500, height=500, 
-        parking_lot_seed=123, 
-        car_seed=123, 
-        max_time=100, 
+        width=500, height=500,
+        parking_lot_seed=123,
+        car_seed=123,
+        max_time=100,
         app_url=base_url
     )
 
@@ -189,4 +189,3 @@ async def test_integrate_sim(caplog, http_client, base_url):
     # this is sufficient to show the system is all connected
     for car, lat, long in car_positions:
         assert (lat, long) != (car.lat, car.long)
-        

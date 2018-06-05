@@ -49,7 +49,6 @@ class SimManager:
 
         self.stop_future = asyncio.Future()
 
-
         count = 0
         name = 0
 
@@ -115,7 +114,8 @@ class SimManager:
                 now = time.time()
                 for simlot in self.lots:
                     x, y = self.loc_to_point(simlot.lot.location)
-                    w.create_rectangle(x, y, x + (simlot.available*4), y + (simlot.available*4), width=0, fill="green", tags="ani")
+                    dxy = simlot.available*4
+                    w.create_rectangle(x, y, x + dxy, y + dxy, width=0, fill="green", tags="ani")
 
                 for car in self.cars:
                     if car.drawing:
@@ -182,7 +182,7 @@ class BarGraph(Graph):
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
-        height = bottom_right_y - top_left_y
+        # height = bottom_right_y - top_left_y
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
@@ -211,7 +211,7 @@ class LineGraph(Graph):
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
-        height = bottom_right_y - top_left_y
+        # height = bottom_right_y - top_left_y
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
@@ -231,7 +231,8 @@ class LineGraph(Graph):
         for v in range(len(values) - 1):
             w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v] * 8,
                           top_left_x + (v+2) * length, bottom_right_y - values[v+1] * 8,
-                          tags = "graph")
+                          tags="graph")
+
 
 class Waypoint:
     def __init__(self, timestamp, lat, long):
@@ -322,7 +323,7 @@ class RogueCar:
         # drive to the closest lot
         duration = bestDistance / self.speed
         arrival = lasttime + duration
-        #self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
+        # self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
         self.waypoints += get_route(wsmodels.Location(currentX, currentY), bestLot.lot.location, lasttime, self.speed)
         self.bestLot = bestLot
         attempt = Attempt(arrival, 20, self)
