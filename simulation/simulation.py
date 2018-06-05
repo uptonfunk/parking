@@ -694,9 +694,3 @@ async def attempt_routine(arrival_time, car, plot: ParkingLot, duration):
         await plot.free_space()
     else:
         await car.retry(now, plot)
-
-if __name__ == '__main__':
-    sim = SimManager(2000, 20, 70, 50, 50, 1000, 500, 2, 4, 100, "127.0.0.1")
-    asyncio.ensure_future(sim.run())
-    asyncio.ensure_future(sim.stop(60))
-    asyncio.get_event_loop().run_forever()
