@@ -142,12 +142,15 @@ class SimManager:
             if "application has been destroyed" not in e.args[0]:
                 raise
 
-    async def run(self):
+    async def run(self, run_tk=True):
         logger.info("simulation running")
         framerate = 1 / 60
-        root = tk.Tk()
-        self.run_task = self.run_tk(root, framerate)
-        await asyncio.gather(self.run_task, *self.tasks)
+        if run_tk:
+            root = tk.Tk()
+            self.run_task = self.run_tk(root, framerate)
+            await asyncio.gather(self.run_task, *self.tasks)
+        else:
+            await asyncio.gather(*self.tasks)
 
         self.stop_future.set_result(True)
 
@@ -255,10 +258,8 @@ def geodistance(ax, ay, bx, by):
 
 class RogueCar:
     @classmethod
-    async def create_rogue(cls, starttime, loc, dest, manager):
-        rogue = cls(starttime, loc, dest, manager)
-        await rogue.tried[0].register(rogue.first_attempt)
-        return rogue
+    def create_rogue(cls, starttime, loc, dest, manager):
+        return cls(starttime, loc, dest, manager)
 
     def __init__(self, starttime, loc, dest, manager):
         self.startX = loc.latitude
@@ -330,6 +331,9 @@ class RogueCar:
         self.first_attempt = attempt
         self.tried.append(bestLot)
 
+    async def register(self):
+        await self.tried[0].register(self.first_attempt)
+
     def get_position(self, now):
         endTime = 0
         waypointIndex = 0
@@ -376,6 +380,9 @@ class RogueCar:
 
     async def retry(self, now, oldlot):
         now = time.time()
+
+        if self.manager.stop_flag:
+            return
 
         time_index = int((now - self.manager.stats[Stats.FIRSTROGUESTARTTIME]) // 0.2)
 
@@ -559,9 +566,7 @@ class ParkingLot:
         self.client = client
 
     async def register(self, attempt: Attempt):
-        now = time.time()
-        asyncio.get_event_loop().create_task(attempt_routine(attempt.arrival - now,
-                                                             attempt.car, self, attempt.duration))
+        await attempt_routine(attempt.arrival, attempt.car, self, attempt.duration)
 
     async def fill_space(self) -> bool:
         with (await self.lock):
@@ -672,12 +677,14 @@ async def rogue_routine(startt, loc, dest, manager):
     now = time.time()
     if manager.stats[Stats.FIRSTROGUESTARTTIME] is None:
         manager.stats[Stats.FIRSTROGUESTARTTIME] = now
-    rogue = await RogueCar.create_rogue(time.time(), loc, dest, manager)
+    rogue = RogueCar.create_rogue(time.time(), loc, dest, manager)
     rogue.drawing = True
     manager.rogues.append(rogue)
+    await rogue.register()
 
 
-async def attempt_routine(delay, car, plot: ParkingLot, duration):
+async def attempt_routine(arrival_time, car, plot: ParkingLot, duration):
+    delay = arrival_time = time.time()
     await asyncio.sleep(delay)
     success = await plot.fill_space()
     now = time.time()

@@ -11,6 +11,7 @@ from parking.backend.sensor_server.rest_server import (IndividualLotDeleteHandle
 from parking.backend.user_server.session import UserSessions
 from parking.backend.user_server.wsserver import UserWSHandler
 
+
 def make_app(url: str, _init_tables: bool = False, _reset_tables: bool = False):
     loop: AbstractEventLoop = tornado.ioloop.IOLoop.current().asyncio_loop
     usessions: UserSessions = UserSessions()
@@ -24,7 +25,7 @@ def make_app(url: str, _init_tables: bool = False, _reset_tables: bool = False):
                                    {'dba': dba, 'engine': engine}),
                                    (r'/spaces/([0-9]+)/price', IndividualLotPriceHandler, {'dba': dba})])
     return app
-    
+
 
 def main(temp_db: bool, db_url: str, reset_tables: bool):
     if temp_db:

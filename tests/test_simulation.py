@@ -162,7 +162,7 @@ async def test_no_parking_lots_retry_waiting(http_client, base_url):
     assert space.error.msg == 'No parking lot available.'
 
 
-@pytest.mark.gen_test(run_sync=False, timeout=60)
+@pytest.mark.gen_test(run_sync=False, timeout=10)
 async def test_integrate_sim(caplog, http_client, base_url):
     caplog.set_level(logging.INFO)
     car_positions = []
@@ -182,8 +182,8 @@ async def test_integrate_sim(caplog, http_client, base_url):
     for car in sim.cars:
         car_positions.append((car, car.lat, car.long))
 
-    asyncio.ensure_future(sim.stop(10))
-    await sim.run()
+    asyncio.ensure_future(sim.stop(2))
+    await sim.run(run_tk=False)
 
     # for now let's ensure the cars moved from their initial locations
     # this is sufficient to show the system is all connected
