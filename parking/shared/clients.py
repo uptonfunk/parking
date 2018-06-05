@@ -99,8 +99,8 @@ class CarWebsocket(object):
         future = asyncio.Future()
         if self._message_queue[message_type]:
             future_set_result_unless_cancelled(future, self._message_queue[message_type].popleft())
-            # logger.info("message recieved as expected: '{}'".format(message_type))
+            logger.debug("message recieved as expected: '{}'".format(message_type))
         else:
             self._waiting[message_type] = future
-            # logger.info("unexpected message received; expected: " + str(message_type))
+            logger.debug("unexpected message received; expected: " + str(message_type))
         return future

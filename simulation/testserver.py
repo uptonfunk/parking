@@ -22,7 +22,7 @@ async def hello(websocket, path):
 
     while True:
         await websocket.recv()
-        if random.randint(1,10) == 1:
+        if random.randint(1, 10) == 1:
             await asyncio.sleep(1)
             await websocket.send(serialize_model(deallocation))
 

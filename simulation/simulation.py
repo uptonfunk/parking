@@ -2,7 +2,6 @@ import asyncio
 import random
 import time
 import tkinter as tk
-import matplotlib
 from tornado import httpclient
 from concurrent import futures
 import logging
@@ -97,7 +96,7 @@ class SimManager:
     def point_to_location(self, x: float, y: float) -> wsmodels.Location:
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
         """
-        return wsmodels.Location(x / (SCALE), y / (SCALE))
+        return wsmodels.Location(x / SCALE, y / SCALE)
 
     def loc_to_point(self, loc: wsmodels.Location):
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
@@ -108,9 +107,6 @@ class SimManager:
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
         w.pack()
-
-        w.create_rectangle(1, 1, self.width, self.height, fill="orange")
-
         try:
             while not self.stop_flag:
                 w.delete("ani")
