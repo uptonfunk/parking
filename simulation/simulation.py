@@ -47,6 +47,8 @@ class SimManager:
         self.graphs.append(LineGraph(self, [Stats.ROGUERETRY]))
         self.retry_lock = asyncio.Lock()
 
+        self.stop_future = asyncio.Future()
+
         count = 0
         name = 0
         locs = []
@@ -119,8 +121,7 @@ class SimManager:
     def loc_to_point(self, loc: wsmodels.Location):
         """Assuming (0, 0) x/y maps to Location(0, 0), compute the Location for an arbitrary x, y point
         """
-        # return (loc.latitude * (SCALE), loc.longitude * (SCALE))
-        return (loc.longitude * (SCALE), loc.latitude * (SCALE))
+        return (loc.longitude * SCALE, loc.latitude * SCALE)
 
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
@@ -131,7 +132,8 @@ class SimManager:
                 now = time.time()
                 for simlot in self.lots:
                     x, y = self.loc_to_point(simlot.lot.location)
-                    w.create_rectangle(x, y, x + (simlot.available*4), y + (simlot.available*4), width=0, fill="green", tags="ani")
+                    dxy = simlot.available*4
+                    w.create_rectangle(x, y, x + dxy, y + dxy, width=0, fill="green", tags="ani")
 
                 for car in self.cars:
                     if car.drawing:
@@ -158,19 +160,22 @@ class SimManager:
             if "application has been destroyed" not in e.args[0]:
                 raise
 
-    async def run(self):
+    async def run(self, run_tk=True):
         logger.info("simulation running")
         framerate = 1 / 60
-        root = tk.Tk()
-        self.run_task = self.run_tk(root, framerate)
-        await asyncio.gather(self.run_task, *self.tasks)
+        if run_tk:
+            root = tk.Tk()
+            self.run_task = self.run_tk(root, framerate)
+            await asyncio.gather(self.run_task, *self.tasks)
+        else:
+            await asyncio.gather(*self.tasks)
+
+        self.stop_future.set_result(True)
 
     async def stop(self, delay):
         await asyncio.sleep(delay)
         self.stop_flag = True
-        await self.run_task
-        for t in self.car_tasks + self.space_tasks:
-            await t
+        await self.stop_future
 
 
 class Stats(Enum):
@@ -198,7 +203,7 @@ class BarGraph(Graph):
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
-        height = bottom_right_y - top_left_y
+        # height = bottom_right_y - top_left_y
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
@@ -227,7 +232,7 @@ class LineGraph(Graph):
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
-        height = bottom_right_y - top_left_y
+        # height = bottom_right_y - top_left_y
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
@@ -247,7 +252,7 @@ class LineGraph(Graph):
         for v in range(len(values) - 1):
             w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v] * 8,
                           top_left_x + (v+2) * length, bottom_right_y - values[v+1] * 8,
-                          tags = "graph")
+                          tags="graph")
 
 
 class Waypoint:
@@ -675,6 +680,7 @@ async def car_routine(startt, start_loc, manager):
         if deallocation is not None:
             logger.info("Recieved deallocation")
             # TODO handle deallocation
+        logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 

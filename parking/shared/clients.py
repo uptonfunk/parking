@@ -38,6 +38,7 @@ class ParkingLotRest(object):
             await self.client.fetch(request)
         except httpclient.HTTPError:
             logger.info("server error while updating lot availability for lot number " + str(lot_id))
+            raise
 
     async def update_price(self, lot_id: int, price: float):
         msgbody = serialize_model(rest_models.ParkingLotPriceMessage(price))
@@ -60,13 +61,14 @@ class CarWebsocket(object):
         self._receive_callbacks = receive_callbacks if receive_callbacks else {}
 
     @classmethod
-    async def create(cls, base_url, user_id='', receive_callbacks=None):
+    async def create(cls, base_url, receive_callbacks=None, user_id=''):
         return cls(await websocket.websocket_connect(base_url + "/" + user_id), receive_callbacks)
 
     async def _send(self, message):
         if not isinstance(message, string_types):
             message = serialize_model(message)
         await self._ws.write_message(message)
+        logger.info("message sent: '{}'")  # .format(message._type))
 
     async def send_location(self, location: rest_models.Location):
         await self._send(ws_models.LocationUpdateMessage(location))
